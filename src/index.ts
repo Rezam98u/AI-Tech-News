@@ -1,10 +1,13 @@
 import 'dotenv/config';
 import { Telegraf } from 'telegraf';
-import { fetchAllArticles } from './data-aggregator';
+import { fetchAllArticles, getRecentArticles } from './data-aggregator';
 import { filterNewArticles } from './storage';
 import { analyzeArticle } from './ai-analysis';
 import { logger } from './logger';
 import { counters, startMetricsServer } from './metrics';
+import { getTimeAgo, getSourceDomain } from './utils/time';
+import cron from 'node-cron';
+import { markArticlesPosted } from './storage';
 
 const botToken = process.env.BOT_TOKEN;
 
@@ -63,6 +66,101 @@ bot.command('feeds', async (ctx) => {
 	}
 });
 
+bot.command('debug', async (ctx) => {
+	counters.commandsHandled.inc({ command: 'debug' });
+	try {
+		await ctx.reply('Testing each feed individually...');
+		const { DEFAULT_FEEDS } = await import('./data-aggregator');
+		
+		let report = 'Feed Status Report:\n\n';
+		for (const feedUrl of DEFAULT_FEEDS) {
+			try {
+				const domain = new URL(feedUrl).hostname.replace(/^www\./, '');
+				const { fetchRssFeed } = await import('./data-aggregator');
+				const articles = await fetchRssFeed(feedUrl);
+				report += `✅ ${domain}: ${articles.length} articles\n`;
+			} catch (err: any) {
+				const domain = new URL(feedUrl).hostname.replace(/^www\./, '');
+				report += `❌ ${domain}: ${err.message || 'Error'}\n`;
+			}
+		}
+		
+		await ctx.reply(report, { link_preview_options: { is_disabled: true } });
+	} catch (err) {
+		counters.errorsTotal.inc({ scope: 'debug' });
+		await ctx.reply('Debug command failed.');
+		logger.error({ err }, 'debug command failed');
+	}
+});
+
+function formatArticle(a: { title: string; link: string; pubDate: string }): string {
+	const ago = getTimeAgo(a.pubDate);
+	const domain = getSourceDomain(a.link);
+	return `🕐 ${ago} • ${domain}\n📰 ${a.title}\n🔗 ${a.link}\n---`;
+}
+
+bot.command('latest', async (ctx) => {
+	counters.commandsHandled.inc({ command: 'latest' });
+	try {
+		const all = await fetchAllArticles();
+		const top = all.slice(0, 5);
+		if (top.length === 0) return void (await ctx.reply('No recent articles available.'));
+		await ctx.reply(top.map(formatArticle).join('\n'), { link_preview_options: { is_disabled: true } });
+	} catch (err) {
+		counters.errorsTotal.inc({ scope: 'latest' });
+		logger.error({ err }, 'latest command failed');
+		await ctx.reply('Failed to fetch latest articles.');
+	}
+});
+
+bot.command('today', async (ctx) => {
+	counters.commandsHandled.inc({ command: 'today' });
+	try {
+		const all = await getRecentArticles(24);
+		if (all.length === 0) return void (await ctx.reply('No articles from the last 24 hours.'));
+		await ctx.reply(all.slice(0, 20).map(formatArticle).join('\n'), { link_preview_options: { is_disabled: true } });
+	} catch (err) {
+		counters.errorsTotal.inc({ scope: 'today' });
+		logger.error({ err }, 'today command failed');
+		await ctx.reply('Failed to fetch today\'s articles.');
+	}
+});
+
+bot.command('week', async (ctx) => {
+	counters.commandsHandled.inc({ command: 'week' });
+	try {
+		const all = await getRecentArticles(24 * 7);
+		if (all.length === 0) return void (await ctx.reply('No articles from the last 7 days.'));
+		await ctx.reply(all.slice(0, 20).map(formatArticle).join('\n'), { link_preview_options: { is_disabled: true } });
+	} catch (err) {
+		counters.errorsTotal.inc({ scope: 'week' });
+		logger.error({ err }, 'week command failed');
+		await ctx.reply('Failed to fetch this week\'s articles.');
+	}
+});
+
+bot.command('recent', async (ctx) => {
+	counters.commandsHandled.inc({ command: 'recent' });
+	try {
+		const text = ctx.message && 'text' in ctx.message ? (ctx.message.text as string) : '';
+		const match = text.match(/^\/recent\s+(\d{1,2})/);
+		let n = 10;
+		if (match && typeof match[1] === 'string') {
+			const parsed = parseInt(match[1], 10);
+			if (!Number.isNaN(parsed) && parsed > 0) n = parsed;
+		}
+		if (isNaN(n) || n <= 0) n = 10;
+		n = Math.min(20, n);
+		const all = await fetchAllArticles();
+		if (all.length === 0) return void (await ctx.reply('No recent articles available.'));
+		await ctx.reply(all.slice(0, n).map(formatArticle).join('\n'), { link_preview_options: { is_disabled: true } });
+	} catch (err) {
+		counters.errorsTotal.inc({ scope: 'recent' });
+		logger.error({ err }, 'recent command failed');
+		await ctx.reply('Failed to fetch recent articles.');
+	}
+});
+
 bot.command('analyze', async (ctx) => {
 	counters.commandsHandled.inc({ command: 'analyze' });
 	try {
@@ -107,6 +205,29 @@ bot
 	.launch()
 	.then(() => {
 		logger.info('Bot started. Send /start to test.');
+		// Scheduler: every minute
+		const targetChat = process.env.TELEGRAM_TARGET_CHAT_ID;
+		if (!targetChat) {
+			logger.warn('TELEGRAM_TARGET_CHAT_ID not set; scheduler will not post');
+		}
+		cron.schedule('* * * * *', async () => {
+			counters.cronRuns.inc();
+			try {
+				const articles = await fetchAllArticles(undefined, { maxAgeHours: 24 * 7 });
+				const newOnes = await filterNewArticles(articles, { maxAgeHours: 24 * 7 });
+				if (!targetChat || newOnes.length === 0) return;
+				// Post the first unseen article each minute
+				const a = newOnes[0]!;
+				const message = `🕐 ${getTimeAgo(a.pubDate)} • ${getSourceDomain(a.link)}\n📰 ${a.title}\n🔗 ${a.link}`;
+				await bot.telegram.sendMessage(targetChat, message, { link_preview_options: { is_disabled: true } });
+				await markArticlesPosted([a]);
+				counters.postsSent.inc();
+				logger.info({ title: a.title, link: a.link }, 'posted new article');
+			} catch (err) {
+				counters.cronErrors.inc();
+				logger.error({ err }, 'scheduler run failed');
+			}
+		});
 	})
 	.catch((err) => {
 		logger.error({ err }, 'Failed to launch bot');

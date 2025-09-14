@@ -23,6 +23,21 @@ export const counters = {
 		labelNames: ['scope'],
 		registers: [metricsRegistry],
 	}),
+	cronRuns: new client.Counter({
+		name: 'bot_cron_runs_total',
+		help: 'Total scheduler runs',
+		registers: [metricsRegistry],
+	}),
+	cronErrors: new client.Counter({
+		name: 'bot_cron_errors_total',
+		help: 'Total scheduler run errors',
+		registers: [metricsRegistry],
+	}),
+	postsSent: new client.Counter({
+		name: 'bot_posts_sent_total',
+		help: 'Total posts sent by scheduler',
+		registers: [metricsRegistry],
+	}),
 };
 
 export function startMetricsServer(port = Number(process.env.METRICS_PORT) || 3000): void {

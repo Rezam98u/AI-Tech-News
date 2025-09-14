@@ -39,9 +39,17 @@ export async function savePostedIds(ids: Set<string>): Promise<void> {
 	await fs.rename(tmp, STORE_FILE);
 }
 
-export async function filterNewArticles(articles: Article[]): Promise<Article[]> {
+export async function filterNewArticles(articles: Article[], options?: { maxAgeHours?: number }): Promise<Article[]> {
 	const seen = await loadPostedIds();
-	return articles.filter((a) => !seen.has(getArticleId(a)));
+	let out = articles.filter((a) => !seen.has(getArticleId(a)));
+	if (typeof options?.maxAgeHours === 'number') {
+		const cutoff = Date.now() - options.maxAgeHours * 3600 * 1000;
+		out = out.filter((a) => {
+			const d = new Date(a.pubDate);
+			return !isNaN(d.getTime()) && d.getTime() >= cutoff;
+		});
+	}
+	return out;
 }
 
 export async function markArticlesPosted(articles: Article[]): Promise<void> {
