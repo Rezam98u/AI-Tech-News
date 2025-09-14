@@ -13,7 +13,9 @@ export const DEFAULT_FEEDS: string[] = [
 	'https://www.wired.com/feed/rss',
 	'https://venturebeat.com/category/ai/feed/',
 	'https://www.theverge.com/rss/index.xml', // Main feed since AI-specific is 404
-	// Product Hunt RSS removed due to 403 - consider API alternative
+	'https://huggingface.co/blog/feed.xml', // Hugging Face AI blog
+	'https://blog.google/technology/ai/rss/', // Google AI blog
+	// Product Hunt & Future Tools require API integration (no public RSS)
 ];
 
 function toIsoString(dateLike: string | Date | undefined): string {
