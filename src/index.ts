@@ -3,6 +3,7 @@ import { Telegraf } from 'telegraf';
 import { fetchAllArticles, getRecentArticles } from './data-aggregator';
 import { filterNewArticles } from './storage';
 import { analyzeArticle } from './ai-analysis';
+import { getPostReadyAnalysis, getAnalysisMetrics } from './ai-analysis/optimized';
 import { logger } from './logger';
 import { counters, startMetricsServer } from './metrics';
 import { getTimeAgo, getSourceDomain } from './utils/time';
@@ -383,26 +384,28 @@ function shortenLink(url: string, maxLength: number = 60): string {
 
 async function createEnhancedPost(article: any): Promise<string> {
 	try {
-		// Generate AI analysis for description and hashtags
-		logger.info({ title: article.title }, 'Generating AI analysis for post');
-		const analysis = await analyzeArticle(article);
+		// Use optimized AI analysis with caching
+		logger.info({ title: article.title }, 'Generating optimized AI analysis for post');
+		const analysis = await getPostReadyAnalysis(article);
 		logger.info({ 
 			title: article.title, 
 			hasDescription: !!analysis.description,
 			hashtagCount: analysis.hashtags.length 
-		}, 'AI analysis completed');
+		}, 'Optimized AI analysis completed');
 		
-		// Build the enhanced post with shortened link
+		// Build the enhanced post with shortened link and publication time
 		const hashtags = analysis.hashtags.length > 0 
 			? '\n\n' + analysis.hashtags.map(tag => `#${tag}`).join(' ')
 			: '';
 		
 		const shortLink = shortenLink(article.link);
+		const timeAgo = getTimeAgo(article.pubDate);
 		
 		const enhancedPost = `📰 ${article.title}
 
 ${analysis.description}${hashtags}
 
+⏰ ${timeAgo}
 🔗 ${shortLink}`;
 
 		logger.info({ title: article.title, postLength: enhancedPost.length }, 'Enhanced post created successfully');
@@ -416,8 +419,10 @@ ${analysis.description}${hashtags}
 		
 		// Fallback to simple format if AI analysis fails
 		const shortLink = shortenLink(article.link);
+		const timeAgo = getTimeAgo(article.pubDate);
 		return `📰 ${article.title}
 
+⏰ ${timeAgo}
 🔗 ${shortLink}`;
 	}
 }
@@ -712,7 +717,7 @@ bot.hears('🔍 Jobs', async (ctx) => {
 });
 
 bot.hears('🤖 Analyze', async (ctx) => {
-	await ctx.reply('Analyzing the latest unseen article...');
+	await ctx.reply('Analyzing the latest unseen article with optimization...');
 	try {
 		const articles = await fetchAllArticles();
 		const newOnes = await filterNewArticles(articles);
@@ -721,7 +726,9 @@ bot.hears('🤖 Analyze', async (ctx) => {
 			return;
 		}
 		const first = newOnes[0]!;
-		const result = await analyzeArticle(first);
+		const result = await getPostReadyAnalysis(first);
+		const metrics = getAnalysisMetrics();
+		
 		const message = `
 📰 ${first.title}
 ${first.link}
@@ -741,6 +748,8 @@ Audience: ${result.target_audience}
 Description: ${result.description}
 
 Hashtags: ${result.hashtags.map(tag => `#${tag}`).join(' ')}
+
+⚡ Performance: ${metrics.cacheHitRate.toFixed(1)}% cache hit rate
 `.trim();
 		await ctx.reply(message, { 
 			link_preview_options: { is_disabled: true },
@@ -1001,6 +1010,105 @@ bot.command('debugai', async (ctx) => {
 	}
 });
 
+bot.command('duplicates', async (ctx) => {
+	counters.commandsHandled.inc({ command: 'duplicates' });
+	try {
+		const { loadPostedIds } = await import('./storage');
+		const postedIds = await loadPostedIds();
+		
+		const articles = await fetchAllArticles(undefined, { maxAgeHours: 24 * 7 });
+		const newOnes = await filterNewArticles(articles, { maxAgeHours: 24 * 7 });
+		
+		let report = '🔍 Duplicate Prevention Status:\n\n';
+		report += `📊 Total Articles Found: ${articles.length}\n`;
+		report += `🆕 New (Not Posted): ${newOnes.length}\n`;
+		report += `✅ Already Posted: ${articles.length - newOnes.length}\n`;
+		report += `💾 Tracked IDs: ${postedIds.size}\n\n`;
+		
+		report += '🎯 Next Posts Preview (Newest First):\n';
+		const targetCategory = (process.env.TARGET_CATEGORY as ContentCategory) || 'AI Tool';
+		const categorizedArticles = filterArticlesByCategory(newOnes, targetCategory);
+		// Sort by newest first
+		categorizedArticles.sort((a, b) => b.pubDate.localeCompare(a.pubDate));
+		
+		if (categorizedArticles.length > 0) {
+			const preview = categorizedArticles.slice(0, 3);
+			preview.forEach((article, i) => {
+				const domain = getSourceDomain(article.link);
+				const timeAgo = getTimeAgo(article.pubDate);
+				report += `${i + 1}. ${domain} (${timeAgo}): ${article.title.substring(0, 40)}...\n`;
+			});
+		} else {
+			report += 'No new articles in target category.\n';
+		}
+		
+		report += `\n🏷️ Target Category: ${targetCategory}\n`;
+		report += `📢 Target Channel: ${process.env.TELEGRAM_TARGET_CHAT_ID || 'Not set'}\n`;
+		
+		await ctx.reply(report, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	} catch (err) {
+		await ctx.reply(`Duplicate check failed: ${err}`, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	}
+});
+
+bot.command('performance', async (ctx) => {
+	counters.commandsHandled.inc({ command: 'performance' });
+	try {
+		const metrics = getAnalysisMetrics();
+		const { getAnalysisCacheStats } = await import('./storage/analysis-cache');
+		const cacheStats = await getAnalysisCacheStats();
+		
+		let report = '⚡ Performance Optimization Status:\n\n';
+		
+		// Analysis Metrics
+		report += '🧠 AI Analysis Performance:\n';
+		report += `📊 Total Requests: ${metrics.totalRequests}\n`;
+		report += `💾 Cache Hits: ${metrics.cacheHits} (${metrics.cacheHitRate.toFixed(1)}%)\n`;
+		report += `🔥 Cache Misses: ${metrics.cacheMisses}\n`;
+		report += `🌐 API Calls: ${metrics.apiCalls}\n`;
+		report += `⚡ Avg Latency: ${metrics.avgLatency.toFixed(0)}ms\n`;
+		report += `❌ Error Rate: ${metrics.errorRate.toFixed(1)}%\n\n`;
+		
+		// Cache Statistics
+		report += '🗄️ Analysis Cache Stats:\n';
+		report += `💾 Cached Analyses: ${cacheStats.totalCached}\n`;
+		if (cacheStats.oldestEntry) {
+			const oldestDate = new Date(cacheStats.oldestEntry);
+			report += `📅 Oldest: ${oldestDate.toLocaleDateString()}\n`;
+		}
+		if (cacheStats.newestEntry) {
+			const newestDate = new Date(cacheStats.newestEntry);
+			report += `🆕 Newest: ${newestDate.toLocaleDateString()}\n`;
+		}
+		
+		// Performance Benefits
+		report += '\n💰 Cost Savings:\n';
+		const savedCalls = metrics.cacheHits;
+		const estimatedSavings = savedCalls * 0.001; // Rough estimate
+		report += `💸 API Calls Saved: ${savedCalls}\n`;
+		report += `💰 Est. Cost Saved: $${estimatedSavings.toFixed(3)}\n\n`;
+		
+		// Optimization Tips
+		if (metrics.cacheHitRate < 50) {
+			report += '💡 Tip: Cache hit rate is low. Consider increasing cache size.\n';
+		} else if (metrics.cacheHitRate > 80) {
+			report += '✅ Excellent cache performance! System is well optimized.\n';
+		}
+		
+		await ctx.reply(report, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	} catch (err) {
+		await ctx.reply(`Performance check failed: ${err}`, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	}
+});
+
 // Graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
@@ -1018,15 +1126,43 @@ bot
 			counters.cronRuns.inc();
 			try {
 				const articles = await fetchAllArticles(undefined, { maxAgeHours: 24 * 7 });
+				// Ensure articles are sorted by newest first before filtering
+				articles.sort((a, b) => b.pubDate.localeCompare(a.pubDate));
 				const newOnes = await filterNewArticles(articles, { maxAgeHours: 24 * 7 });
-				if (!targetChat || newOnes.length === 0) return;
+				// Sort new articles by publication date (newest first)
+				newOnes.sort((a, b) => b.pubDate.localeCompare(a.pubDate));
+				
+				logger.debug({ 
+					totalArticles: articles.length,
+					newArticles: newOnes.length,
+					hasTargetChat: !!targetChat,
+					newestDate: articles[0]?.pubDate
+				}, 'scheduler: fetched and filtered articles');
+				
+				if (!targetChat || newOnes.length === 0) {
+					if (!targetChat) {
+						logger.debug('scheduler: no target chat configured');
+					} else {
+						logger.debug('scheduler: no new articles to post');
+					}
+					return;
+				}
 				
 				// Filter by target category (default to AI Tool)
 				const targetCategory = (process.env.TARGET_CATEGORY as ContentCategory) || 'AI Tool';
 				const categorizedArticles = filterArticlesByCategory(newOnes, targetCategory);
+				// Ensure categorized articles are sorted by newest first
+				categorizedArticles.sort((a, b) => b.pubDate.localeCompare(a.pubDate));
+				
+				logger.debug({ 
+					targetCategory, 
+					totalNew: newOnes.length,
+					categorizedCount: categorizedArticles.length,
+					newestCategorizedDate: categorizedArticles[0]?.pubDate
+				}, 'scheduler: filtered by category');
 				
 				if (categorizedArticles.length === 0) {
-					logger.debug({ targetCategory, totalNew: newOnes.length }, 'no articles in target category');
+					logger.debug({ targetCategory, totalNew: newOnes.length }, 'scheduler: no articles in target category');
 					return;
 				}
 				
@@ -1040,11 +1176,41 @@ bot
 					'Sponsored Deal': '💰'
 				}[targetCategory];
 				
+				// Double-check this article hasn't been posted (extra safety)
+				const { getArticleId } = await import('./storage');
+				const { loadPostedIds } = await import('./storage');
+				const postedIds = await loadPostedIds();
+				const articleId = getArticleId(a);
+				
+				if (postedIds.has(articleId)) {
+					logger.warn({ 
+						title: a.title, 
+						link: a.link,
+						articleId 
+					}, 'scheduler: article already posted (duplicate detected)');
+					return;
+				}
+				
+				logger.info({ 
+					title: a.title, 
+					link: a.link, 
+					category: targetCategory,
+					articleId 
+				}, 'scheduler: posting new article to channel');
+				
 				const message = await createEnhancedPost(a);
 				await sendPostWithImage(targetChat, message, a.imageUrl);
 				await markArticlesPosted([a]);
 				counters.postsSent.inc();
-				logger.info({ title: a.title, link: a.link, category: targetCategory }, 'posted categorized article');
+				
+				logger.info({ 
+					title: a.title, 
+					link: a.link, 
+					category: targetCategory,
+					articleId,
+					messageLength: message.length 
+				}, 'scheduler: successfully posted article to channel');
+				
 			} catch (err) {
 				counters.cronErrors.inc();
 				logger.error({ err }, 'scheduler run failed');
