@@ -6,6 +6,42 @@ import { filterByTimeRange } from '../utils/time';
 
 const rssParser = new Parser();
 
+function extractImageUrl(item: any): string | undefined {
+	// Try different common image fields in RSS feeds
+	const imageFields = [
+		item.enclosure?.url, // Common for media enclosures
+		item['media:content']?.['@_url'], // Media RSS
+		item['media:thumbnail']?.['@_url'], // Media RSS thumbnail
+		item.image?.url, // Some feeds have image.url
+		item.image, // Some feeds have image as string
+	];
+	
+	// Also try to extract from content/description HTML
+	const contentFields = [item.content, item.contentSnippet, item.description];
+	for (const content of contentFields) {
+		if (typeof content === 'string') {
+			// Look for img tags
+			const imgMatch = content.match(/<img[^>]+src=["']([^"']+)["'][^>]*>/i);
+			if (imgMatch && imgMatch[1]) {
+				imageFields.push(imgMatch[1]);
+			}
+		}
+	}
+	
+	// Find the first valid image URL
+	for (const field of imageFields) {
+		if (typeof field === 'string' && field.trim()) {
+			const url = field.trim();
+			// Basic validation - should be a URL
+			if (url.startsWith('http://') || url.startsWith('https://')) {
+				return url;
+			}
+		}
+	}
+	
+	return undefined;
+}
+
 export const DEFAULT_FEEDS: string[] = [
 	'https://techcrunch.com/tag/artificial-intelligence/feed/',
 	'https://openai.com/blog/rss.xml',
@@ -54,12 +90,16 @@ export async function fetchRssFeed(url: string): Promise<Article[]> {
 	// First try with rss-parser
 	try {
 		const feed = await rssParser.parseURL(url);
-		const items = (feed.items || []).map((item) => ({
-			title: item.title ?? 'Untitled',
-			link: item.link ?? '',
-			contentSnippet: (item.contentSnippet || item.content || '').toString().trim(),
-			pubDate: toIsoString(item.isoDate || (item.pubDate as string | undefined)),
-		}));
+		const items = (feed.items || []).map((item) => {
+			const imageUrl = extractImageUrl(item);
+			return {
+				title: item.title ?? 'Untitled',
+				link: item.link ?? '',
+				contentSnippet: (item.contentSnippet || item.content || '').toString().trim(),
+				pubDate: toIsoString(item.isoDate || (item.pubDate as string | undefined)),
+				...(imageUrl && { imageUrl }),
+			};
+		});
 		logger.debug({ url, count: items.length }, 'fetched feed');
 		return items;
 	} catch (err) {
@@ -78,12 +118,16 @@ export async function fetchRssFeed(url: string): Promise<Article[]> {
 			});
 			
 			const feed = await rssParser.parseString(res.data);
-			const items = (feed.items || []).map((item) => ({
-				title: item.title ?? 'Untitled',
-				link: item.link ?? '',
-				contentSnippet: (item.contentSnippet || item.content || '').toString().trim(),
-				pubDate: toIsoString(item.isoDate || (item.pubDate as string | undefined)),
-			}));
+			const items = (feed.items || []).map((item) => {
+				const imageUrl = extractImageUrl(item);
+				return {
+					title: item.title ?? 'Untitled',
+					link: item.link ?? '',
+					contentSnippet: (item.contentSnippet || item.content || '').toString().trim(),
+					pubDate: toIsoString(item.isoDate || (item.pubDate as string | undefined)),
+					...(imageUrl && { imageUrl }),
+				};
+			});
 			logger.debug({ url, count: items.length, attempt }, 'fetched feed (axios fallback)');
 			return items;
 			

@@ -3,6 +3,7 @@ export interface Article {
 	link: string;
 	contentSnippet: string;
 	pubDate: string; // ISO 8601 string
+	imageUrl?: string; // Optional image URL from the article
 }
 
 export interface AnalysisResult {
@@ -10,6 +11,8 @@ export interface AnalysisResult {
 	bullets: string[]; // exactly 3 items preferred
 	business_implication: string;
 	target_audience: string;
+	description: string; // AI-generated description for social media
+	hashtags: string[]; // Relevant hashtags
 }
 
 

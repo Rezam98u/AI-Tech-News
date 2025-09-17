@@ -1,29 +1,6 @@
-import OpenAI from 'openai';
 import { Article, AnalysisResult } from '../types';
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-function buildPrompt(article: Article): string {
-	const articleTitle = article.title;
-	const articleText = article.contentSnippet;
-	return `
-You are an analyst for "The AI Pipeline," a service for business professionals and product managers.
-
-ARTICLE TITLE: ${articleTitle}
-ARTICLE TEXT: ${articleText}
-
-Analyze this article and provide a JSON object with the following keys:
-- "tldr": (string) A one-sentence summary.
-- "bullets": (string[]) An array of exactly 3 concise key takeaways.
-- "business_implication": (string) Explain what this means for businesses, products, or the market.
-- "target_audience": (string) Describe which professionals would find this most relevant.
-
-Guidelines:
-- Focus on product features, market shifts, and competitive dynamics.
-- Be concise and insightful. Avoid fluff.
-- Translate technical jargon into business impact.
-`;
-}
+import { AIProviderFactory, detectAIProvider, buildEnhancedPrompt } from './providers';
+import { logger } from '../logger';
 
 function coerceResult(obj: any): AnalysisResult {
 	return {
@@ -31,33 +8,44 @@ function coerceResult(obj: any): AnalysisResult {
 		bullets: Array.isArray(obj?.bullets) ? obj.bullets.map((b: any) => String(b)) : [],
 		business_implication: String(obj?.business_implication ?? '').trim(),
 		target_audience: String(obj?.target_audience ?? '').trim(),
+		description: String(obj?.description ?? '').trim(),
+		hashtags: Array.isArray(obj?.hashtags) ? obj.hashtags.map((h: any) => String(h).replace('#', '')) : [],
 	};
 }
 
 export async function analyzeArticle(article: Article): Promise<AnalysisResult> {
-	if (!process.env.OPENAI_API_KEY) {
-		throw new Error('Missing OPENAI_API_KEY');
-	}
-
-	const prompt = buildPrompt(article);
-	const response = await openai.chat.completions.create({
-		model: 'gpt-4o-mini',
-		messages: [
-			{ role: 'system', content: 'Return ONLY valid JSON. No prose outside JSON.' },
-			{ role: 'user', content: prompt },
-		],
-		temperature: 0.3,
-	});
-
-	const content = response.choices?.[0]?.message?.content ?? '';
-	let parsed: any;
 	try {
-		const jsonText = content.trim().replace(/^```json\n?|```$/g, '');
-		parsed = JSON.parse(jsonText);
+		// Detect and configure AI provider
+		const config = detectAIProvider();
+		logger.info({ provider: config.provider, model: config.model }, 'Using AI provider for analysis');
+		
+		const provider = AIProviderFactory.createProvider(config);
+		const prompt = buildEnhancedPrompt(article);
+		
+		// Analyze with the selected provider
+		const parsed = await provider.analyze(prompt);
+		logger.info({ 
+			provider: config.provider, 
+			title: article.title,
+			hasDescription: !!parsed.description,
+			hashtagCount: parsed.hashtags?.length || 0
+		}, 'AI analysis completed successfully');
+		
+		return coerceResult(parsed);
+		
 	} catch (err) {
-		parsed = {};
+		logger.error({ err: err instanceof Error ? err.message : String(err) }, 'AI analysis failed');
+		
+		// Return fallback analysis
+		return {
+			tldr: `Breaking: ${article.title}`,
+			bullets: ['Key development in AI/tech space', 'Potential impact on businesses', 'Worth monitoring for updates'],
+			business_implication: 'This development could impact how businesses operate in the AI/tech space.',
+			target_audience: 'Business professionals, product managers, and tech leaders',
+			description: `${article.title} - This latest development in the AI/tech space could have significant implications for businesses and professionals.`,
+			hashtags: ['AI', 'TechNews', 'Innovation', 'Business', 'Technology', 'Update']
+		};
 	}
-	return coerceResult(parsed);
 }
 
 
