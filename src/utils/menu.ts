@@ -23,6 +23,9 @@ export const MENU_COMMANDS: MenuCommand[] = [
 	// Tools
 	{ command: 'analyze', description: '🤖 AI Analysis', category: 'tools' },
 	{ command: 'testpost', description: '🧪 Test Enhanced Post', category: 'tools' },
+	{ command: 'testpersian', description: '🧪 Test Persian Analysis', category: 'tools' },
+	{ command: 'testtranslate', description: '🌐 Test Translation', category: 'tools' },
+	{ command: 'testenglish', description: '🇺🇸 Test English Post', category: 'tools' },
 	{ command: 'feeds', description: '📡 Feed Status', category: 'tools' },
 	{ command: 'categories', description: '📊 Article Categories', category: 'tools' },
 	{ command: 'raw', description: '📋 Raw Articles', category: 'tools' },
@@ -47,7 +50,8 @@ export function createMainMenu() {
 		['📰 Latest News', '📅 Today', '📊 This Week'],
 		['🛠️ AI Tools', '📰 Tech News', '💼 Business'],
 		['🔍 Jobs', '💻 Developer Prompts', '🤖 Analyze'],
-		['🧪 Test Post', '📡 Feeds', '📊 Categories'],
+		['🧪 Test Post', '🧪 Test Persian', '🌐 Test Translation'],
+		['🇺🇸 Test English', '📡 Feeds', '📊 Categories'],
 		['💻 Dev Prompts DB', '🐙 GitHub Trending'],
 		['⚡ Performance', '🔍 Duplicates', '📋 Raw'],
 		['🔧 Admin Tools', '❓ Help', '📱 Menu']

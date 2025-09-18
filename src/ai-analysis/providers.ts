@@ -147,9 +147,41 @@ export function detectAIProvider(): AIProviderConfig {
 }
 
 // Enhanced prompt for better results across different models
-export function buildEnhancedPrompt(article: Article): string {
+export function buildEnhancedPrompt(article: Article, translateToPersian: boolean = true): string {
 	const articleTitle = article.title;
 	const articleText = article.contentSnippet;
+	
+	if (translateToPersian) {
+		return `You are an expert AI analyst for "The AI Pipeline," a premium service for business professionals and product managers.
+
+ARTICLE TITLE: ${articleTitle}
+ARTICLE TEXT: ${articleText}
+
+Analyze this article and provide a JSON object with EXACTLY these keys, ALL CONTENT IN PERSIAN:
+{
+  "tldr": "یک جمله جذاب که خلاصه خبر اصلی را ارائه دهد",
+  "bullets": ["اولین نکته کلیدی", "دومین نکته کلیدی", "سومین نکته کلیدی"],
+  "business_implication": "توضیح واضح تأثیر کسب‌وکار/بازار - فقط در صورت وجود تأثیر معنادار کسب‌وکار، در غیر این صورت رشته خالی",
+  "target_audience": "متخصصان خاصی که این موضوع برای آنها مرتبط است",
+  "description": "توضیح جذاب 2-3 جمله‌ای برای رسانه‌های اجتماعی که اهمیت موضوع را برجسته کند",
+  "hashtags": ["هوش_مصنوعی", "اخبار_فناوری", "نوآوری", "کسب_وکار", "برچسب‌های", "مرتبط", "اضافی"]
+}
+
+CRITICAL REQUIREMENTS:
+- Return ONLY valid JSON, no extra text
+- ALL content must be in Persian (Farsi)
+- Description must be 2-3 sentences, engaging and newsworthy in Persian
+- Include 6-8 hashtags in Persian without # symbols
+- Focus on business impact and practical implications
+- Use clear, professional Persian language
+- Bullets must be exactly 3 items in Persian
+- Make it compelling for Persian-speaking business professionals
+- business_implication: ONLY include if there's a clear, actionable business impact that affects revenue, costs, or strategy. Use empty string ("") for minor updates
+- INCLUDE business_implication for: major product launches, pricing changes, acquisitions, funding, policy changes, partnerships, layoffs/hiring, revenue reports
+- SKIP business_implication for: bug fixes, minor features, version releases, tutorials, research papers, reviews, entertainment
+
+Example Persian hashtags: هوش_مصنوعی, اخبار_فناوری, نوآوری, کسب_وکار, استارتاپ, مدیریت_محصول, یادگیری_ماشین, اتوماسیون, تحول_دیجیتال`;
+	}
 	
 	return `You are an expert AI analyst for "The AI Pipeline," a premium service for business professionals and product managers.
 

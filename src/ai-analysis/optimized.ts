@@ -28,6 +28,7 @@ let metrics: AnalysisMetrics = {
 export async function getOptimizedAnalysis(article: Article, options?: {
 	forceRefresh?: boolean;
 	priority?: 'low' | 'normal' | 'high';
+	translateToPersian?: boolean;
 }): Promise<AnalysisResult> {
 	const startTime = Date.now();
 	metrics.totalRequests++;
@@ -49,10 +50,11 @@ export async function getOptimizedAnalysis(article: Article, options?: {
 		logger.info({ 
 			title: article.title,
 			priority: options?.priority || 'normal',
-			forceRefresh: options?.forceRefresh || false
+			forceRefresh: options?.forceRefresh || false,
+			translateToPersian: options?.translateToPersian || false
 		}, 'analysis: performing AI analysis');
 		
-		const analysis = await analyzeArticle(article);
+		const analysis = await analyzeArticle(article, options?.translateToPersian);
 		metrics.apiCalls++;
 		
 		// Cache the result
@@ -79,8 +81,15 @@ export async function getOptimizedAnalysis(article: Article, options?: {
 			latency: Date.now() - startTime
 		}, 'analysis: failed, using fallback');
 		
-		// Return fallback analysis
-		const fallback: AnalysisResult = {
+		// Return fallback analysis based on language
+		const fallback: AnalysisResult = options?.translateToPersian ? {
+			tldr: `آخرین: ${article.title}`,
+			bullets: ['تحول مهم در حوزه هوش مصنوعی/فناوری', 'می‌تواند بر کسب‌وکارها و متخصصان تأثیر بگذارد', 'ارزش پیگیری برای به‌روزرسانی‌ها'],
+			business_implication: 'این تحول ممکن است تأثیراتی بر نحوه فعالیت کسب‌وکارها در بخش هوش مصنوعی/فناوری داشته باشد.',
+			target_audience: 'متخصصان کسب‌وکار، مدیران محصول، و رهبران فناوری',
+			description: `${article.title} - این آخرین تحولات می‌تواند تأثیرات مهمی بر صنعت فناوری و کسب‌وکارها داشته باشد.`,
+			hashtags: ['هوش_مصنوعی', 'اخبار_فناوری', 'نوآوری', 'کسب_وکار', 'فناوری', 'خبر_فوری']
+		} : {
 			tldr: `Latest: ${article.title}`,
 			bullets: ['Important development in AI/tech', 'Could impact businesses and professionals', 'Worth monitoring for updates'],
 			business_implication: 'This development may have implications for how businesses operate in the AI/tech sector.',
@@ -104,6 +113,7 @@ export async function getBatchAnalysis(
 		maxConcurrent?: number;
 		delayBetween?: number;
 		priority?: 'low' | 'normal' | 'high';
+		translateToPersian?: boolean;
 	}
 ): Promise<Map<string, AnalysisResult>> {
 	const results = new Map<string, AnalysisResult>();
@@ -144,11 +154,12 @@ export async function getBatchAnalysis(
 /**
  * Smart analysis that only analyzes when needed for posting
  */
-export async function getPostReadyAnalysis(article: Article): Promise<AnalysisResult> {
-	logger.info({ title: article.title }, 'analysis: preparing article for posting');
+export async function getPostReadyAnalysis(article: Article, translateToPersian: boolean = true): Promise<AnalysisResult> {
+	logger.info({ title: article.title, translateToPersian }, 'analysis: preparing article for posting');
 	
 	return await getOptimizedAnalysis(article, { 
-		priority: 'high' // High priority for posts being published
+		priority: 'high', // High priority for posts being published
+		translateToPersian
 	});
 }
 

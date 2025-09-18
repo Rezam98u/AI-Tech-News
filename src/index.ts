@@ -24,6 +24,59 @@ if (!botToken) {
 const bot = new Telegraf(botToken);
 startMetricsServer();
 
+// Helper function to detect if text contains Persian characters
+function isPersianText(text: string): boolean {
+	const persianRegex = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
+	return persianRegex.test(text);
+}
+
+// Helper function to check if business impact is valuable (supports both English and Persian)
+function isValuableBusinessImpact(businessImpact: string, isPersian: boolean = false): boolean {
+	if (!businessImpact || businessImpact.length < 30) return false;
+	
+	const lowerImpact = businessImpact.toLowerCase();
+	
+	// Check for vague phrases based on language
+	const vagueEnglishPhrases = [
+		'no clear business impact',
+		'minor impact',
+		'limited business',
+		'general impact',
+		'potential impact'
+	];
+	
+	const vaguePersianPhrases = [
+		'تأثیر کسب‌وکار واضحی ندارد',
+		'تأثیر جزئی',
+		'کسب‌وکار محدود',
+		'تأثیر عمومی',
+		'تأثیر بالقوه'
+	];
+	
+	// Check if contains vague phrases
+	const vaguePhrasesToCheck = isPersian ? vaguePersianPhrases : vagueEnglishPhrases;
+	const hasVaguePhrase = vaguePhrasesToCheck.some(phrase => lowerImpact.includes(phrase));
+	
+	if (hasVaguePhrase) return false;
+	
+	// Check for meaningful business keywords based on language
+	const englishKeywords = [
+		'revenue', 'cost', 'profit', 'market', 'competitive',
+		'strategy', 'acquisition', 'funding', 'pricing', 'partnership'
+	];
+	
+	const persianKeywords = [
+		'درآمد', 'هزینه', 'سود', 'بازار', 'رقابتی',
+		'استراتژی', 'خرید', 'تأمین مالی', 'قیمت', 'مشارکت'
+	];
+	
+	// Check if contains meaningful keywords
+	const keywordsToCheck = isPersian ? persianKeywords : englishKeywords;
+	const hasMeaningfulKeyword = keywordsToCheck.some(keyword => lowerImpact.includes(keyword));
+	
+	return hasMeaningfulKeyword;
+}
+
 // Global update counter
 bot.use(async (ctx, next) => {
 	counters.messagesReceived.inc();
@@ -490,16 +543,20 @@ function shortenLink(url: string, maxLength: number = 60): string {
 	}
 }
 
-async function createEnhancedPost(article: any): Promise<string> {
+async function createEnhancedPost(article: any, translateToPersian: boolean = true): Promise<string> {
 	try {
 		// Use optimized AI analysis with caching
-		logger.info({ title: article.title }, 'Generating optimized AI analysis for post');
-		const analysis = await getPostReadyAnalysis(article);
+		logger.info({ title: article.title, translateToPersian }, 'Generating optimized AI analysis for post');
+		const analysis = await getPostReadyAnalysis(article, translateToPersian);
 		logger.info({ 
 			title: article.title, 
 			hasDescription: !!analysis.description,
-			hashtagCount: analysis.hashtags.length 
+			hashtagCount: analysis.hashtags.length,
+			translateToPersian
 		}, 'Optimized AI analysis completed');
+		
+		// Detect if content is in Persian (either original or translated)
+		const isPersian = isPersianText(article.title + ' ' + analysis.tldr + ' ' + analysis.description) || translateToPersian;
 		
 		// Build the enhanced post with tldr, bullets, business_implication, and more
 		const hashtags = analysis.hashtags.length > 0 
@@ -516,34 +573,21 @@ async function createEnhancedPost(article: any): Promise<string> {
 		
 		// Build business implication section (only when valuable)
 		const businessImpact = analysis.business_implication?.trim() || '';
-		const isValueableBusinessImpact = businessImpact &&
-			businessImpact.length > 30 && // Must be substantial
-			!businessImpact.toLowerCase().includes('no clear business impact') &&
-			!businessImpact.toLowerCase().includes('minor impact') &&
-			!businessImpact.toLowerCase().includes('limited business') &&
-			!businessImpact.toLowerCase().includes('general impact') &&
-			!businessImpact.toLowerCase().includes('potential impact') &&
-			// Check for meaningful business keywords
-			(businessImpact.toLowerCase().includes('revenue') ||
-			 businessImpact.toLowerCase().includes('cost') ||
-			 businessImpact.toLowerCase().includes('profit') ||
-			 businessImpact.toLowerCase().includes('market') ||
-			 businessImpact.toLowerCase().includes('competitive') ||
-			 businessImpact.toLowerCase().includes('strategy') ||
-			 businessImpact.toLowerCase().includes('acquisition') ||
-			 businessImpact.toLowerCase().includes('funding') ||
-			 businessImpact.toLowerCase().includes('pricing') ||
-			 businessImpact.toLowerCase().includes('partnership'));
+		const isValueableBusinessImpact = isValuableBusinessImpact(businessImpact, isPersian);
 
+		// Use appropriate language for business section
+		const businessSectionLabel = isPersian ? '💼 **تأثیر کسب‌وکار:**' : '💼 **Business Impact:**';
 		const businessSection = isValueableBusinessImpact
-			? `\n\n💼 **Business Impact:** ${businessImpact}`
+			? `\n\n${businessSectionLabel} ${businessImpact}`
 			: '';
 		
 		logger.debug({
 			title: article.title?.substring(0, 50),
 			hasBusinessImpact: !!businessImpact,
 			isValuable: isValueableBusinessImpact,
-			businessImpactLength: businessImpact.length
+			businessImpactLength: businessImpact.length,
+			isPersian: isPersian,
+			translateToPersian
 		}, 'Business impact evaluation');
 		
 		const enhancedPost = `💡 ${analysis.tldr}${bulletsSection}${businessSection}
@@ -553,19 +597,32 @@ ${analysis.description}${hashtags}
 ⏰ ${timeAgo}
 🔗 ${shortLink}`;
 
-		logger.info({ title: article.title, postLength: enhancedPost.length }, 'Enhanced post created successfully');
+		logger.info({ title: article.title, postLength: enhancedPost.length, isPersian, translateToPersian }, 'Enhanced post created successfully');
 		return enhancedPost;
 		
 	} catch (err) {
 		logger.error({ 
 			err: err instanceof Error ? err.message : String(err), 
-			article: article.title
+			article: article.title,
+			translateToPersian
 		}, 'Failed to create enhanced post, using fallback');
 		
 		// Fallback to simple format if AI analysis fails
 		const shortLink = shortenLink(article.link);
 		const timeAgo = getTimeAgo(article.pubDate);
-		return `💡 Latest development in AI/tech space
+		const isPersian = isPersianText(article.title) || translateToPersian;
+		
+		if (isPersian) {
+			return `💡 آخرین تحول در حوزه هوش مصنوعی و فناوری
+
+🔸 خبر مهم برای صنعت
+🔸 می‌تواند بر کسب‌وکارها و متخصصان تأثیر بگذارد
+🔸 ارزش پیگیری برای به‌روزرسانی‌ها
+
+⏰ ${timeAgo}
+🔗 ${shortLink}`;
+		} else {
+			return `💡 Latest development in AI/tech space
 
 🔸 Important news for the industry
 🔸 Could impact businesses and professionals
@@ -573,6 +630,7 @@ ${analysis.description}${hashtags}
 
 ⏰ ${timeAgo}
 🔗 ${shortLink}`;
+		}
 	}
 }
 
@@ -710,6 +768,99 @@ bot.command('testpost', async (ctx) => {
 		counters.errorsTotal.inc({ scope: 'testpost' });
 		await ctx.reply('Failed to create test post.');
 		logger.error({ err }, 'testpost command failed');
+	}
+});
+
+bot.command('testpersian', async (ctx) => {
+	counters.commandsHandled.inc({ command: 'testpersian' });
+	try {
+		// Create a test Persian article
+		const testPersianArticle = {
+			title: 'راه‌اندازی مدل جدید هوش مصنوعی توسط شرکت ایرانی',
+			link: 'https://example.com/persian-ai-news',
+			contentSnippet: 'شرکت فناوری ایرانی امروز از راه‌اندازی مدل جدید هوش مصنوعی خبر داد که قابلیت‌های پیشرفته‌ای در پردازش زبان فارسی دارد. این مدل می‌تواند در صنایع مختلف از جمله بانکداری، آموزش و خدمات مشتریان مورد استفاده قرار گیرد.',
+			pubDate: new Date().toISOString(),
+			imageUrl: undefined
+		};
+		
+		await ctx.reply('🧪 **Testing Persian Language Analysis**\n\nGenerating AI-enhanced post for Persian content...');
+		
+		const message = await createEnhancedPost(testPersianArticle);
+		
+		await ctx.reply(message, {
+			reply_markup: createMainMenu().reply_markup
+		});
+		
+		await ctx.reply('✅ **Persian Test Complete!**\n\nThis demonstrates how the bot analyzes and formats Persian content with appropriate language detection and business impact evaluation.', {
+			reply_markup: createMainMenu().reply_markup
+		});
+		
+	} catch (err) {
+		await ctx.reply(`Persian test failed: ${err}`, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	}
+});
+
+bot.command('testtranslate', async (ctx) => {
+	counters.commandsHandled.inc({ command: 'testtranslate' });
+	try {
+		// Create a test English article
+		const testEnglishArticle = {
+			title: 'OpenAI Announces Major Breakthrough in AI Model Performance',
+			link: 'https://example.com/english-ai-news',
+			contentSnippet: 'OpenAI has announced a significant breakthrough in their latest AI model, achieving unprecedented performance in natural language understanding and generation. The new model demonstrates improved capabilities in reasoning, creativity, and problem-solving across various domains.',
+			pubDate: new Date().toISOString(),
+			imageUrl: undefined
+		};
+		
+		await ctx.reply('🌐 **Testing English to Persian Translation**\n\nTranslating and analyzing English content to Persian...');
+		
+		const message = await createEnhancedPost(testEnglishArticle, true); // Explicitly request Persian translation
+		
+		await ctx.reply(message, {
+			reply_markup: createMainMenu().reply_markup
+		});
+		
+		await ctx.reply('✅ **Translation Test Complete!**\n\nThis demonstrates how the bot translates English content to Persian with full AI analysis, business impact evaluation, and proper formatting.', {
+			reply_markup: createMainMenu().reply_markup
+		});
+		
+	} catch (err) {
+		await ctx.reply(`Translation test failed: ${err}`, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	}
+});
+
+bot.command('testenglish', async (ctx) => {
+	counters.commandsHandled.inc({ command: 'testenglish' });
+	try {
+		// Create a test English article
+		const testEnglishArticle = {
+			title: 'Meta Unveils Advanced AI Assistant for Businesses',
+			link: 'https://example.com/meta-ai-business',
+			contentSnippet: 'Meta has launched a new AI assistant specifically designed for business applications, featuring advanced natural language processing capabilities and integration with popular business tools. The assistant aims to improve productivity and streamline workflows.',
+			pubDate: new Date().toISOString(),
+			imageUrl: undefined
+		};
+		
+		await ctx.reply('🇺🇸 **Testing English Language Post**\n\nGenerating AI-enhanced post in English...');
+		
+		const message = await createEnhancedPost(testEnglishArticle, false); // Request English analysis
+		
+		await ctx.reply(message, {
+			reply_markup: createMainMenu().reply_markup
+		});
+		
+		await ctx.reply('✅ **English Test Complete!**\n\nThis demonstrates how the bot analyzes and formats content in English when specifically requested.', {
+			reply_markup: createMainMenu().reply_markup
+		});
+		
+	} catch (err) {
+		await ctx.reply(`English test failed: ${err}`, {
+			reply_markup: createMainMenu().reply_markup
+		});
 	}
 });
 
@@ -923,6 +1074,93 @@ bot.hears('🧪 Test Post', async (ctx) => {
 		await sendPostWithImage(ctx.chat.id.toString(), message, testArticle.imageUrl);
 	} catch (err) {
 		await ctx.reply('Failed to create test post.');
+	}
+});
+
+bot.hears('🧪 Test Persian', async (ctx) => {
+	await ctx.reply('🧪 **Testing Persian Language Analysis**\n\nGenerating AI-enhanced post for Persian content...');
+	try {
+		// Create a test Persian article
+		const testPersianArticle = {
+			title: 'راه‌اندازی مدل جدید هوش مصنوعی توسط شرکت ایرانی',
+			link: 'https://example.com/persian-ai-news',
+			contentSnippet: 'شرکت فناوری ایرانی امروز از راه‌اندازی مدل جدید هوش مصنوعی خبر داد که قابلیت‌های پیشرفته‌ای در پردازش زبان فارسی دارد. این مدل می‌تواند در صنایع مختلف از جمله بانکداری، آموزش و خدمات مشتریان مورد استفاده قرار گیرد.',
+			pubDate: new Date().toISOString(),
+			imageUrl: undefined
+		};
+		
+		const message = await createEnhancedPost(testPersianArticle);
+		
+		await ctx.reply(message, {
+			reply_markup: createMainMenu().reply_markup
+		});
+		
+		await ctx.reply('✅ **Persian Test Complete!**\n\nThis demonstrates how the bot analyzes and formats Persian content with appropriate language detection and business impact evaluation.', {
+			reply_markup: createMainMenu().reply_markup
+		});
+		
+	} catch (err) {
+		await ctx.reply(`Persian test failed: ${err}`, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	}
+});
+
+bot.hears('🌐 Test Translation', async (ctx) => {
+	await ctx.reply('🌐 **Testing English to Persian Translation**\n\nTranslating and analyzing English content to Persian...');
+	try {
+		// Create a test English article
+		const testEnglishArticle = {
+			title: 'OpenAI Announces Major Breakthrough in AI Model Performance',
+			link: 'https://example.com/english-ai-news',
+			contentSnippet: 'OpenAI has announced a significant breakthrough in their latest AI model, achieving unprecedented performance in natural language understanding and generation. The new model demonstrates improved capabilities in reasoning, creativity, and problem-solving across various domains.',
+			pubDate: new Date().toISOString(),
+			imageUrl: undefined
+		};
+		
+		const message = await createEnhancedPost(testEnglishArticle, true); // Explicitly request Persian translation
+		
+		await ctx.reply(message, {
+			reply_markup: createMainMenu().reply_markup
+		});
+		
+		await ctx.reply('✅ **Translation Test Complete!**\n\nThis demonstrates how the bot translates English content to Persian with full AI analysis, business impact evaluation, and proper formatting.', {
+			reply_markup: createMainMenu().reply_markup
+		});
+		
+	} catch (err) {
+		await ctx.reply(`Translation test failed: ${err}`, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	}
+});
+
+bot.hears('🇺🇸 Test English', async (ctx) => {
+	await ctx.reply('🇺🇸 **Testing English Language Post**\n\nGenerating AI-enhanced post in English...');
+	try {
+		// Create a test English article
+		const testEnglishArticle = {
+			title: 'Meta Unveils Advanced AI Assistant for Businesses',
+			link: 'https://example.com/meta-ai-business',
+			contentSnippet: 'Meta has launched a new AI assistant specifically designed for business applications, featuring advanced natural language processing capabilities and integration with popular business tools. The assistant aims to improve productivity and streamline workflows.',
+			pubDate: new Date().toISOString(),
+			imageUrl: undefined
+		};
+		
+		const message = await createEnhancedPost(testEnglishArticle, false); // Request English analysis
+		
+		await ctx.reply(message, {
+			reply_markup: createMainMenu().reply_markup
+		});
+		
+		await ctx.reply('✅ **English Test Complete!**\n\nThis demonstrates how the bot analyzes and formats content in English when specifically requested.', {
+			reply_markup: createMainMenu().reply_markup
+		});
+		
+	} catch (err) {
+		await ctx.reply(`English test failed: ${err}`, {
+			reply_markup: createMainMenu().reply_markup
+		});
 	}
 });
 
