@@ -25,3 +25,6 @@ TARGET_CATEGORY=AI Tool
 
 # Optional: Port for metrics server (default: 3000)
 PORT=3000
+
+# Optional: GitHub API Token (increases rate limit for trending repos)
+GITHUB_TOKEN=your_github_token_here

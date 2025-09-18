@@ -11,6 +11,8 @@ import { createMainMenu, createCategoryMenu, createToolsMenu, createAdminMenu, c
 import cron from 'node-cron';
 import { markArticlesPosted } from './storage';
 import { categorizeArticle, filterArticlesByCategory, categorizeAllArticles, ContentCategory } from './categorizer';
+import { getTrendingReposForTelegram } from './github-api';
+import { DEVELOPER_PROMPTS, getPromptsByCategory, searchPrompts, getRandomPrompt, formatPromptForTelegram, getPromptsForTelegramByCategory } from './prompts';
 
 const botToken = process.env.BOT_TOKEN;
 
@@ -140,6 +142,7 @@ bot.command('categories', async (ctx) => {
 		report += `💼 Business Use-Cases: ${categorized['Business Use-Case'].length}\n`;
 		report += `🔍 Job Opportunities: ${categorized['Job Opportunity'].length}\n`;
 		report += `💰 Sponsored Deals: ${categorized['Sponsored Deal'].length}\n`;
+		report += `💻 Developer Prompts: ${categorized['Developer Prompts'].length}\n`;
 		
 		const totalCategorized = Object.values(categorized).flat().length;
 		const uncategorized = articles.length - totalCategorized;
@@ -159,6 +162,48 @@ bot.command('categories', async (ctx) => {
 		counters.errorsTotal.inc({ scope: 'categories' });
 		await ctx.reply('Categories command failed.');
 		logger.error({ err }, 'categories command failed');
+	}
+});
+
+bot.command('prompts', async (ctx) => {
+	counters.commandsHandled.inc({ command: 'prompts' });
+	try {
+		const articles = await fetchAllArticles();
+		const promptArticles = filterArticlesByCategory(articles, 'Developer Prompts');
+		
+		if (promptArticles.length === 0) {
+			await ctx.reply('No developer prompts or GitHub repositories found.', {
+				reply_markup: createMainMenu().reply_markup
+			});
+			return;
+		}
+		
+		// Sort by newest first
+		promptArticles.sort((a, b) => b.pubDate.localeCompare(a.pubDate));
+		
+		let report = `💻 Developer Prompts & GitHub Repos (${promptArticles.length} found):\n\n`;
+		
+		const preview = promptArticles.slice(0, 5);
+		preview.forEach((article, i) => {
+			const domain = getSourceDomain(article.link);
+			const timeAgo = getTimeAgo(article.pubDate);
+			const isGitHub = domain === 'github.com';
+			const emoji = isGitHub ? '🐙' : '💻';
+			report += `${emoji} ${article.title.substring(0, 60)}...\n`;
+			report += `   🔗 ${domain} • ⏰ ${timeAgo}\n\n`;
+		});
+		
+		if (promptArticles.length > 5) {
+			report += `... and ${promptArticles.length - 5} more`;
+		}
+		
+		await ctx.reply(report, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	} catch (err) {
+		await ctx.reply(`Prompts command failed: ${err}`, {
+			reply_markup: createMainMenu().reply_markup
+		});
 	}
 });
 
@@ -245,7 +290,7 @@ bot.command('raw', async (ctx) => {
 		const articles = await fetchAllArticles();
 		
 		// Show newest 5 articles from each major source
-		const sources = ['techcrunch.com', 'openai.com', 'technologyreview.com', 'wired.com', 'theverge.com', 'huggingface.co', 'blog.google'];
+		const sources = ['techcrunch.com', 'openai.com', 'technologyreview.com', 'theverge.com', 'huggingface.co', 'blog.google'];
 		let report = '📰 Raw Articles by Source:\n\n';
 		
 		for (const source of sources) {
@@ -333,24 +378,59 @@ function formatArticle(a: { title: string; link: string; pubDate: string; imageU
 }
 
 async function sendPostWithImage(chatId: string, message: string, imageUrl?: string): Promise<void> {
-	if (imageUrl) {
+	logger.info({ 
+		hasImageUrl: !!imageUrl, 
+		imageUrl: imageUrl?.substring(0, 100) + '...',
+		chatId 
+	}, 'Attempting to send post with image');
+
+	if (imageUrl && imageUrl.trim()) {
 		try {
+			// Validate image URL
+			if (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://')) {
+				logger.warn({ imageUrl }, 'Invalid image URL format, falling back to text');
+				throw new Error('Invalid URL format');
+			}
+
 			// Try to send with image first
-			await bot.telegram.sendPhoto(chatId, imageUrl, {
+			logger.info({ imageUrl: imageUrl.substring(0, 100) + '...' }, 'Sending photo to Telegram');
+			
+			// Try different methods for better compatibility
+			const photoOptions = {
 				caption: message,
-				parse_mode: 'HTML',
-			});
+				parse_mode: 'Markdown' as const,
+			};
+
+			// Method 1: Direct URL
+			try {
+				await bot.telegram.sendPhoto(chatId, imageUrl, photoOptions);
+				logger.info('Photo sent successfully via direct URL');
+			} catch (directError) {
+				logger.warn({ error: String(directError) }, 'Direct URL failed, trying with Input object');
+				
+				// Method 2: Using Input object (sometimes works better)
+				await bot.telegram.sendPhoto(chatId, { url: imageUrl }, photoOptions);
+				logger.info('Photo sent successfully via Input object');
+			}
 		} catch (err) {
 			// If image fails, fall back to text only
-			logger.warn({ err, imageUrl }, 'Failed to send image, falling back to text');
+			const errorMsg = err instanceof Error ? err.message : String(err);
+			logger.warn({ 
+				error: errorMsg, 
+				imageUrl: imageUrl?.substring(0, 100) + '...' 
+			}, 'Failed to send image, falling back to text');
+			
 			await bot.telegram.sendMessage(chatId, message, { 
-				link_preview_options: { is_disabled: true } 
+				link_preview_options: { is_disabled: true },
+				parse_mode: 'Markdown'
 			});
 		}
 	} else {
 		// No image, send text only
+		logger.info('No image URL provided, sending text only');
 		await bot.telegram.sendMessage(chatId, message, { 
-			link_preview_options: { is_disabled: true } 
+			link_preview_options: { is_disabled: true },
+			parse_mode: 'Markdown'
 		});
 	}
 }
@@ -393,7 +473,7 @@ async function createEnhancedPost(article: any): Promise<string> {
 			hashtagCount: analysis.hashtags.length 
 		}, 'Optimized AI analysis completed');
 		
-		// Build the enhanced post with shortened link and publication time
+		// Build the enhanced post with tldr, bullets, business_implication, and more
 		const hashtags = analysis.hashtags.length > 0 
 			? '\n\n' + analysis.hashtags.map(tag => `#${tag}`).join(' ')
 			: '';
@@ -401,7 +481,17 @@ async function createEnhancedPost(article: any): Promise<string> {
 		const shortLink = shortenLink(article.link);
 		const timeAgo = getTimeAgo(article.pubDate);
 		
-		const enhancedPost = `📰 ${article.title}
+		// Build bullets section
+		const bulletsSection = analysis.bullets && analysis.bullets.length > 0
+			? '\n\n🔸 ' + analysis.bullets.join('\n🔸 ')
+			: '';
+		
+		// Build business implication section (optional)
+		const businessSection = analysis.business_implication && analysis.business_implication.trim()
+			? `\n\n💼 **Business Impact:** ${analysis.business_implication}`
+			: '';
+		
+		const enhancedPost = `💡 ${analysis.tldr}${bulletsSection}${businessSection}
 
 ${analysis.description}${hashtags}
 
@@ -420,7 +510,11 @@ ${analysis.description}${hashtags}
 		// Fallback to simple format if AI analysis fails
 		const shortLink = shortenLink(article.link);
 		const timeAgo = getTimeAgo(article.pubDate);
-		return `📰 ${article.title}
+		return `💡 Latest development in AI/tech space
+
+🔸 Important news for the industry
+🔸 Could impact businesses and professionals
+🔸 Worth monitoring for updates
 
 ⏰ ${timeAgo}
 🔗 ${shortLink}`;
@@ -820,6 +914,7 @@ bot.hears('📊 Categories', async (ctx) => {
 		report += `💼 Business Use-Cases: ${categorized['Business Use-Case'].length}\n`;
 		report += `🔍 Job Opportunities: ${categorized['Job Opportunity'].length}\n`;
 		report += `💰 Sponsored Deals: ${categorized['Sponsored Deal'].length}\n`;
+		report += `💻 Developer Prompts: ${categorized['Developer Prompts'].length}\n`;
 		
 		const totalCategorized = Object.values(categorized).flat().length;
 		const uncategorized = articles.length - totalCategorized;
@@ -847,7 +942,7 @@ bot.hears('📋 Raw', async (ctx) => {
 	try {
 		const articles = await fetchAllArticles();
 		
-		const sources = ['techcrunch.com', 'openai.com', 'technologyreview.com', 'wired.com', 'theverge.com', 'huggingface.co', 'blog.google'];
+		const sources = ['techcrunch.com', 'openai.com', 'technologyreview.com', 'theverge.com', 'huggingface.co', 'blog.google'];
 		let report = '📰 Raw Articles by Source:\n\n';
 		
 		for (const source of sources) {
@@ -867,6 +962,88 @@ bot.hears('📋 Raw', async (ctx) => {
 		});
 	} catch (err) {
 		await ctx.reply('Raw command failed.');
+	}
+});
+
+bot.hears('💻 Developer Prompts', async (ctx) => {
+	await ctx.reply('Fetching developer prompts and GitHub repositories...');
+	try {
+		const articles = await fetchAllArticles();
+		const promptArticles = filterArticlesByCategory(articles, 'Developer Prompts');
+		
+		if (promptArticles.length === 0) {
+			await ctx.reply('No developer prompts or GitHub repositories found.', {
+				reply_markup: createMainMenu().reply_markup
+			});
+			return;
+		}
+		
+		// Sort by newest first
+		promptArticles.sort((a, b) => b.pubDate.localeCompare(a.pubDate));
+		
+		let report = `💻 Developer Prompts & GitHub Repos (${promptArticles.length} found):\n\n`;
+		
+		const preview = promptArticles.slice(0, 5);
+		preview.forEach((article, i) => {
+			const domain = getSourceDomain(article.link);
+			const timeAgo = getTimeAgo(article.pubDate);
+			const isGitHub = domain === 'github.com';
+			const emoji = isGitHub ? '🐙' : '💻';
+			report += `${emoji} ${article.title.substring(0, 60)}...\n`;
+			report += `   🔗 ${domain} • ⏰ ${timeAgo}\n\n`;
+		});
+		
+		if (promptArticles.length > 5) {
+			report += `... and ${promptArticles.length - 5} more`;
+		}
+		
+		await ctx.reply(report, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	} catch (err) {
+		await ctx.reply(`Developer prompts command failed: ${err}`, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	}
+});
+
+bot.hears('💻 Dev Prompts DB', async (ctx) => {
+	await ctx.reply('Accessing Developer Prompts Database...');
+	try {
+		const categories = ['coding', 'debugging', 'code-review', 'documentation', 'testing', 'refactoring', 'architecture'];
+		let message = '💻 **Developer Prompts Database**\n\n';
+		message += `📚 **Available Categories:**\n`;
+		categories.forEach(cat => {
+			const count = getPromptsByCategory(cat as any).length;
+			message += `• ${cat} (${count} prompts)\n`;
+		});
+		message += '\n💡 **Usage:**\n';
+		message += '• `/devprompts` - Show all categories\n';
+		message += '• `/devprompts coding` - Show coding prompts\n';
+		message += '• `/devprompts random` - Get random prompt\n';
+		message += '• `/devprompts search [keyword]` - Search prompts';
+		
+		await ctx.reply(message, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	} catch (err) {
+		await ctx.reply(`Developer prompts database failed: ${err}`, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	}
+});
+
+bot.hears('🐙 GitHub Trending', async (ctx) => {
+	await ctx.reply('🔍 Fetching trending AI/ML repositories...');
+	try {
+		const message = await getTrendingReposForTelegram();
+		await ctx.reply(message, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	} catch (err) {
+		await ctx.reply(`GitHub trending repos failed: ${err}`, {
+			reply_markup: createMainMenu().reply_markup
+		});
 	}
 });
 
@@ -1109,6 +1286,208 @@ bot.command('performance', async (ctx) => {
 	}
 });
 
+bot.command('devprompts', async (ctx) => {
+	counters.commandsHandled.inc({ command: 'devprompts' });
+	try {
+		const args = ctx.message.text.split(' ').slice(1);
+		
+		if (args.length === 0) {
+			// Show all categories
+			const categories = ['coding', 'debugging', 'code-review', 'documentation', 'testing', 'refactoring', 'architecture'];
+			let message = '💻 **Developer Prompts Database**\n\n';
+			message += `📚 **Available Categories:**\n`;
+			categories.forEach(cat => {
+				const count = getPromptsByCategory(cat as any).length;
+				message += `• ${cat} (${count} prompts)\n`;
+			});
+			message += '\n💡 **Usage:**\n';
+			message += '• `/devprompts` - Show all categories\n';
+			message += '• `/devprompts coding` - Show coding prompts\n';
+			message += '• `/devprompts random` - Get random prompt\n';
+			message += '• `/devprompts search [keyword]` - Search prompts';
+			
+			await ctx.reply(message, {
+				reply_markup: createMainMenu().reply_markup
+			});
+			return;
+		}
+		
+		const command = args[0]?.toLowerCase() || '';
+		
+		if (command === 'random') {
+			const randomPrompt = getRandomPrompt();
+			const message = formatPromptForTelegram(randomPrompt, true);
+			await ctx.reply(message, {
+				reply_markup: createMainMenu().reply_markup
+			});
+			return;
+		}
+		
+		if (command === 'search') {
+			const searchTerm = args.slice(1).join(' ');
+			if (!searchTerm) {
+				await ctx.reply('Please provide a search term. Example: `/devprompts search api`', {
+					reply_markup: createMainMenu().reply_markup
+				});
+				return;
+			}
+			
+			const results = searchPrompts(searchTerm);
+			if (results.length === 0) {
+				await ctx.reply(`No prompts found for "${searchTerm}"`, {
+					reply_markup: createMainMenu().reply_markup
+				});
+				return;
+			}
+			
+			let message = `🔍 **Search Results for "${searchTerm}"** (${results.length} found)\n\n`;
+			results.slice(0, 5).forEach((prompt, index) => {
+				message += `${index + 1}. **${prompt.title}**\n`;
+				message += `   ${prompt.description}\n\n`;
+			});
+			
+			if (results.length > 5) {
+				message += `... and ${results.length - 5} more results`;
+			}
+			
+			await ctx.reply(message, {
+				reply_markup: createMainMenu().reply_markup
+			});
+			return;
+		}
+		
+		// Show prompts by category
+		const validCategories = ['coding', 'debugging', 'code-review', 'documentation', 'testing', 'refactoring', 'architecture'];
+		if (validCategories.includes(command)) {
+			const message = getPromptsForTelegramByCategory(command as any);
+			await ctx.reply(message, {
+				reply_markup: createMainMenu().reply_markup
+			});
+			return;
+		}
+		
+		// Try to find prompt by ID
+		const prompt = DEVELOPER_PROMPTS.find(p => p.id === command);
+		if (prompt) {
+			const message = formatPromptForTelegram(prompt, true);
+			await ctx.reply(message, {
+				reply_markup: createMainMenu().reply_markup
+			});
+			return;
+		}
+		
+		await ctx.reply(`Invalid command. Use \`/devprompts\` to see available options.`, {
+			reply_markup: createMainMenu().reply_markup
+		});
+		
+	} catch (err) {
+		await ctx.reply(`Developer prompts command failed: ${err}`, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	}
+});
+
+bot.command('github', async (ctx) => {
+	counters.commandsHandled.inc({ command: 'github' });
+	try {
+		await ctx.reply('🔍 Fetching trending AI/ML repositories...');
+		
+		const message = await getTrendingReposForTelegram();
+		await ctx.reply(message, {
+			reply_markup: createMainMenu().reply_markup
+		});
+		
+	} catch (err) {
+		await ctx.reply(`GitHub trending repos failed: ${err}`, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	}
+});
+
+bot.command('resetcache', async (ctx) => {
+	counters.commandsHandled.inc({ command: 'resetcache' });
+	try {
+		const fs = require('fs');
+		const path = require('path');
+		
+		await ctx.reply('🧹 Resetting cache files...');
+		
+		const dataDir = path.join(process.cwd(), 'data');
+		const analysisCacheFile = path.join(dataDir, 'analysis-cache.json');
+		const postedFile = path.join(dataDir, 'posted.json');
+		
+		let resetCount = 0;
+		let report = '🧹 **Cache Reset Report**\n\n';
+		
+		// Reset analysis cache
+		if (fs.existsSync(analysisCacheFile)) {
+			try {
+				fs.unlinkSync(analysisCacheFile);
+				report += '✅ Analysis cache cleared\n';
+				resetCount++;
+			} catch (err) {
+				report += '❌ Failed to clear analysis cache\n';
+			}
+		} else {
+			report += 'ℹ️ Analysis cache already empty\n';
+		}
+		
+		// Reset posted articles
+		if (fs.existsSync(postedFile)) {
+			try {
+				fs.unlinkSync(postedFile);
+				report += '✅ Seen articles list cleared\n';
+				resetCount++;
+			} catch (err) {
+				report += '❌ Failed to clear seen articles\n';
+			}
+		} else {
+			report += 'ℹ️ Seen articles list already empty\n';
+		}
+		
+		report += `\n🎉 **Reset Complete!** (${resetCount} files cleared)\n\n`;
+		report += '**Effects:**\n';
+		report += '• All articles will be treated as new\n';
+		report += '• AI analysis cache starts fresh\n';
+		report += '• Performance optimization resets\n';
+		
+		await ctx.reply(report, {
+			reply_markup: createMainMenu().reply_markup
+		});
+		
+	} catch (err) {
+		await ctx.reply(`Cache reset failed: ${err}`, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	}
+});
+
+bot.command('cleanseen', async (ctx) => {
+	counters.commandsHandled.inc({ command: 'cleanseen' });
+	try {
+		const fs = require('fs');
+		const path = require('path');
+		
+		const postedFile = path.join(process.cwd(), 'data', 'posted.json');
+		
+		if (fs.existsSync(postedFile)) {
+			fs.unlinkSync(postedFile);
+			await ctx.reply('✅ **Seen Articles Cleared!**\n\nAll articles will now be treated as new and available for posting again.', {
+				reply_markup: createMainMenu().reply_markup
+			});
+		} else {
+			await ctx.reply('ℹ️ **No Seen Articles Found**\n\nSeen articles list is already empty.', {
+				reply_markup: createMainMenu().reply_markup
+			});
+		}
+		
+	} catch (err) {
+		await ctx.reply(`Failed to clear seen articles: ${err}`, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	}
+});
+
 // Graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
@@ -1173,7 +1552,8 @@ bot
 					'Tech News': '📰',
 					'Business Use-Case': '💼',
 					'Job Opportunity': '🔍',
-					'Sponsored Deal': '💰'
+					'Sponsored Deal': '💰',
+					'Developer Prompts': '💻'
 				}[targetCategory];
 				
 				// Double-check this article hasn't been posted (extra safety)

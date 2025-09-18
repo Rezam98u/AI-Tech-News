@@ -18,6 +18,7 @@ export const MENU_COMMANDS: MenuCommand[] = [
 	{ command: 'technews', description: '📰 Tech News Flash', category: 'news' },
 	{ command: 'business', description: '💼 Business Use-Cases', category: 'news' },
 	{ command: 'jobs', description: '🔍 Job Opportunities', category: 'news' },
+	{ command: 'prompts', description: '💻 Developer Prompts', category: 'news' },
 	
 	// Tools
 	{ command: 'analyze', description: '🤖 AI Analysis', category: 'tools' },
@@ -26,6 +27,8 @@ export const MENU_COMMANDS: MenuCommand[] = [
 	{ command: 'categories', description: '📊 Article Categories', category: 'tools' },
 	{ command: 'raw', description: '📋 Raw Articles', category: 'tools' },
 	{ command: 'recent', description: '⏰ Recent Articles', category: 'tools' },
+	{ command: 'devprompts', description: '💻 Dev Prompts DB', category: 'tools' },
+	{ command: 'github', description: '🐙 GitHub Trending', category: 'tools' },
 	
 	// Admin
 	{ command: 'debug', description: '🔧 Debug Feeds', category: 'admin' },
@@ -37,8 +40,9 @@ export function createMainMenu() {
 	return Markup.keyboard([
 		['📰 Latest News', '📅 Today', '📊 This Week'],
 		['🛠️ AI Tools', '📰 Tech News', '💼 Business'],
-		['🔍 Jobs', '🤖 Analyze', '🧪 Test Post'],
-		['📡 Feeds', '📊 Categories', '📋 Raw'],
+		['🔍 Jobs', '💻 Developer Prompts', '🤖 Analyze'],
+		['🧪 Test Post', '📡 Feeds', '📊 Categories'],
+		['💻 Dev Prompts DB', '🐙 GitHub Trending', '📋 Raw'],
 		['🔧 Debug', '⏱️ Scheduler', '📢 Channel'],
 		['❓ Help', '📱 Menu']
 	]).resize().persistent();
@@ -47,8 +51,8 @@ export function createMainMenu() {
 export function createCategoryMenu() {
 	return Markup.keyboard([
 		['🛠️ AI Tools', '📰 Tech News', '💼 Business'],
-		['🔍 Jobs', '📊 Categories', '📋 Raw'],
-		['🏠 Main Menu']
+		['🔍 Jobs', '💻 Developer Prompts', '📊 Categories'],
+		['📋 Raw', '🏠 Main Menu']
 	]).resize().persistent();
 }
 
@@ -56,6 +60,7 @@ export function createToolsMenu() {
 	return Markup.keyboard([
 		['🤖 Analyze', '🧪 Test Post', '📡 Feeds'],
 		['📊 Categories', '📋 Raw', '⏰ Recent'],
+		['💻 Dev Prompts DB', '🐙 GitHub Trending'],
 		['🏠 Main Menu']
 	]).resize().persistent();
 }

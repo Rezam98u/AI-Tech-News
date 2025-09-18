@@ -1,7 +1,7 @@
 import { Article } from '../types';
 import { logger } from '../logger';
 
-export type ContentCategory = 'AI Tool' | 'Tech News' | 'Business Use-Case' | 'Job Opportunity' | 'Sponsored Deal';
+export type ContentCategory = 'AI Tool' | 'Tech News' | 'Business Use-Case' | 'Job Opportunity' | 'Sponsored Deal' | 'Developer Prompts';
 
 interface CategoryKeywords {
 	[key: string]: {
@@ -65,6 +65,19 @@ const CATEGORY_KEYWORDS: CategoryKeywords = {
 			'% off', 'percent off', 'free trial', 'lifetime', 'bundle',
 			'pricing', 'subscription', 'plan', 'upgrade', 'premium'
 		]
+	},
+	'Developer Prompts': {
+		primary: [
+			'prompt', 'prompts', 'github', 'repository', 'repo', 'code',
+			'programming', 'developer', 'coding', 'debugging', 'refactoring'
+		],
+		secondary: [
+			'api', 'sdk', 'library', 'framework', 'tool', 'utility',
+			'open source', 'contribute', 'pull request', 'issue',
+			'star', 'fork', 'clone', 'commit', 'merge', 'branch',
+			'javascript', 'python', 'typescript', 'react', 'node',
+			'machine learning', 'ai', 'llm', 'gpt', 'chatgpt'
+		]
 	}
 };
 
@@ -96,13 +109,17 @@ export function categorizeArticle(article: Article): ContentCategory | null {
 		'Tech News': 0,
 		'Business Use-Case': 0,
 		'Job Opportunity': 0,
-		'Sponsored Deal': 0
+		'Sponsored Deal': 0,
+		'Developer Prompts': 0
 	};
 
 	// Domain-based scoring boosts
 	const domain = article.link ? new URL(article.link).hostname.toLowerCase() : '';
 	if (domain.includes('huggingface.co') || domain.includes('blog.google')) {
 		scores['AI Tool'] += 2; // Moderate boost for AI-focused tech blogs
+	}
+	if (domain.includes('github.com')) {
+		scores['Developer Prompts'] += 3; // Strong boost for GitHub repositories
 	}
 
 	// Calculate scores for each category
@@ -171,7 +188,8 @@ export function categorizeAllArticles(articles: Article[]): { [key in ContentCat
 		'Tech News': [],
 		'Business Use-Case': [],
 		'Job Opportunity': [],
-		'Sponsored Deal': []
+		'Sponsored Deal': [],
+		'Developer Prompts': []
 	};
 
 	for (const article of articles) {
@@ -188,6 +206,7 @@ export function categorizeAllArticles(articles: Article[]): { [key in ContentCat
 		'Business Use-Case': categorized['Business Use-Case'].length,
 		'Job Opportunity': categorized['Job Opportunity'].length,
 		'Sponsored Deal': categorized['Sponsored Deal'].length,
+		'Developer Prompts': categorized['Developer Prompts'].length,
 		uncategorized: articles.length - Object.values(categorized).flat().length
 	}, 'categorized all articles');
 

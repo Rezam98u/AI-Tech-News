@@ -34,10 +34,33 @@ function extractImageUrl(item: any): string | undefined {
 			const url = field.trim();
 			// Basic validation - should be a URL
 			if (url.startsWith('http://') || url.startsWith('https://')) {
-				return url;
+				// Decode HTML entities in the URL
+				const cleanUrl = url
+					.replace(/&#038;/g, '&')
+					.replace(/&amp;/g, '&')
+					.replace(/&lt;/g, '<')
+					.replace(/&gt;/g, '>')
+					.replace(/&quot;/g, '"')
+					.replace(/&#8217;/g, "'")
+					.replace(/&#8216;/g, "'");
+				
+				logger.debug({ 
+					title: item.title?.substring(0, 50) + '...',
+					originalUrl: url.substring(0, 100) + '...',
+					cleanUrl: cleanUrl.substring(0, 100) + '...',
+					source: 'RSS extraction'
+				}, 'Found and cleaned image URL in RSS feed');
+				return cleanUrl;
 			}
 		}
 	}
+	
+	logger.debug({ 
+		title: item.title?.substring(0, 50) + '...',
+		availableFields: Object.keys(item).filter(key => 
+			key.includes('image') || key.includes('media') || key.includes('enclosure')
+		)
+	}, 'No valid image URL found in RSS item');
 	
 	return undefined;
 }
@@ -46,7 +69,6 @@ export const DEFAULT_FEEDS: string[] = [
 	'https://techcrunch.com/tag/artificial-intelligence/feed/',
 	'https://openai.com/blog/rss.xml',
 	'https://www.technologyreview.com/topic/artificial-intelligence/feed/',
-	'https://www.wired.com/feed/rss',
 	'https://venturebeat.com/category/ai/feed/',
 	'https://www.theverge.com/rss/index.xml', // Main feed since AI-specific is 404
 	'https://huggingface.co/blog/feed.xml', // Hugging Face AI blog
