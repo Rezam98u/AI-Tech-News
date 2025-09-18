@@ -40,7 +40,7 @@ export async function analyzeArticle(article: Article): Promise<AnalysisResult> 
 		return {
 			tldr: `Breaking: ${article.title}`,
 			bullets: ['Key development in AI/tech space', 'Potential impact on businesses', 'Worth monitoring for updates'],
-			business_implication: 'This development could impact how businesses operate in the AI/tech space.',
+			business_implication: '', // No business implication for fallback
 			target_audience: 'Business professionals, product managers, and tech leaders',
 			description: `${article.title} - This latest development in the AI/tech space could have significant implications for businesses and professionals.`,
 			hashtags: ['AI', 'TechNews', 'Innovation', 'Business', 'Technology', 'Update']

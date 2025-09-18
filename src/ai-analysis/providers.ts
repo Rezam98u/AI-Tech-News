@@ -160,7 +160,7 @@ Analyze this article and provide a JSON object with EXACTLY these keys:
 {
   "tldr": "A single, compelling sentence that captures the core news",
   "bullets": ["First key insight", "Second key insight", "Third key insight"],
-  "business_implication": "Clear explanation of business/market impact",
+  "business_implication": "Clear explanation of business/market impact - ONLY if there's a meaningful business impact, otherwise empty string",
   "target_audience": "Specific professionals who would find this relevant",
   "description": "Engaging 2-3 sentence social media description that highlights why this matters",
   "hashtags": ["AI", "TechNews", "Innovation", "Business", "additional", "relevant", "tags"]
@@ -174,6 +174,9 @@ CRITICAL REQUIREMENTS:
 - Use clear, professional language
 - Bullets must be exactly 3 items
 - Make it compelling for business professionals
+- business_implication: ONLY include if there's a clear, actionable business impact that affects revenue, costs, or strategy. Use empty string ("") for minor updates, bug fixes, feature updates, or general news
+- INCLUDE business_implication for: major product launches, pricing changes, acquisition announcements, funding rounds, policy changes affecting businesses, significant partnerships, layoffs/hiring, revenue reports
+- SKIP business_implication for: bug fixes, minor feature updates, version releases, technical tutorials, research papers, reviews, entertainment content, general tech news without clear commercial impact
 
 Example hashtags: AI, TechNews, Innovation, Business, Startup, ProductManagement, MachineLearning, Automation, DigitalTransformation`;
 }

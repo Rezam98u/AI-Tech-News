@@ -29,11 +29,17 @@ export const MENU_COMMANDS: MenuCommand[] = [
 	{ command: 'recent', description: '⏰ Recent Articles', category: 'tools' },
 	{ command: 'devprompts', description: '💻 Dev Prompts DB', category: 'tools' },
 	{ command: 'github', description: '🐙 GitHub Trending', category: 'tools' },
+	{ command: 'performance', description: '⚡ Performance Stats', category: 'tools' },
+	{ command: 'duplicates', description: '🔍 Duplicate Check', category: 'tools' },
 	
 	// Admin
 	{ command: 'debug', description: '🔧 Debug Feeds', category: 'admin' },
 	{ command: 'schedulertest', description: '⏱️ Scheduler Test', category: 'admin' },
 	{ command: 'channeltest', description: '📢 Channel Test', category: 'admin' },
+	{ command: 'resetcache', description: '🧹 Reset Cache', category: 'admin' },
+	{ command: 'cleanseen', description: '🗑️ Clear Seen Articles', category: 'admin' },
+	{ command: 'deletechannel', description: '🗑️ Delete All Channel Posts', category: 'admin' },
+	{ command: 'deletelast', description: '🗑️ Delete Recent Posts', category: 'admin' },
 ];
 
 export function createMainMenu() {
@@ -42,9 +48,9 @@ export function createMainMenu() {
 		['🛠️ AI Tools', '📰 Tech News', '💼 Business'],
 		['🔍 Jobs', '💻 Developer Prompts', '🤖 Analyze'],
 		['🧪 Test Post', '📡 Feeds', '📊 Categories'],
-		['💻 Dev Prompts DB', '🐙 GitHub Trending', '📋 Raw'],
-		['🔧 Debug', '⏱️ Scheduler', '📢 Channel'],
-		['❓ Help', '📱 Menu']
+		['💻 Dev Prompts DB', '🐙 GitHub Trending'],
+		['⚡ Performance', '🔍 Duplicates', '📋 Raw'],
+		['🔧 Admin Tools', '❓ Help', '📱 Menu']
 	]).resize().persistent();
 }
 
@@ -67,7 +73,10 @@ export function createToolsMenu() {
 
 export function createAdminMenu() {
 	return Markup.keyboard([
-		['🔧 Debug', '⏱️ Scheduler', '📢 Channel'],
+		['🔧 Debug Feeds', '⏱️ Scheduler Test', '📢 Channel Test'],
+		['🧹 Reset Cache', '🗑️ Clear Seen Articles'],
+		['🗑️ Delete All Posts', '🗑️ Delete Recent Posts'],
+		['⚡ Performance Stats', '🔍 Duplicate Check'],
 		['🏠 Main Menu']
 	]).resize().persistent();
 }

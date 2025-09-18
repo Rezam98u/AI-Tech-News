@@ -514,10 +514,37 @@ async function createEnhancedPost(article: any): Promise<string> {
 			? '\n\n🔸 ' + analysis.bullets.join('\n🔸 ')
 			: '';
 		
-		// Build business implication section (optional)
-		const businessSection = analysis.business_implication && analysis.business_implication.trim()
-			? `\n\n💼 **Business Impact:** ${analysis.business_implication}`
+		// Build business implication section (only when valuable)
+		const businessImpact = analysis.business_implication?.trim() || '';
+		const isValueableBusinessImpact = businessImpact &&
+			businessImpact.length > 30 && // Must be substantial
+			!businessImpact.toLowerCase().includes('no clear business impact') &&
+			!businessImpact.toLowerCase().includes('minor impact') &&
+			!businessImpact.toLowerCase().includes('limited business') &&
+			!businessImpact.toLowerCase().includes('general impact') &&
+			!businessImpact.toLowerCase().includes('potential impact') &&
+			// Check for meaningful business keywords
+			(businessImpact.toLowerCase().includes('revenue') ||
+			 businessImpact.toLowerCase().includes('cost') ||
+			 businessImpact.toLowerCase().includes('profit') ||
+			 businessImpact.toLowerCase().includes('market') ||
+			 businessImpact.toLowerCase().includes('competitive') ||
+			 businessImpact.toLowerCase().includes('strategy') ||
+			 businessImpact.toLowerCase().includes('acquisition') ||
+			 businessImpact.toLowerCase().includes('funding') ||
+			 businessImpact.toLowerCase().includes('pricing') ||
+			 businessImpact.toLowerCase().includes('partnership'));
+
+		const businessSection = isValueableBusinessImpact
+			? `\n\n💼 **Business Impact:** ${businessImpact}`
 			: '';
+		
+		logger.debug({
+			title: article.title?.substring(0, 50),
+			hasBusinessImpact: !!businessImpact,
+			isValuable: isValueableBusinessImpact,
+			businessImpactLength: businessImpact.length
+		}, 'Business impact evaluation');
 		
 		const enhancedPost = `💡 ${analysis.tldr}${bulletsSection}${businessSection}
 
@@ -1075,6 +1102,244 @@ bot.hears('🐙 GitHub Trending', async (ctx) => {
 	}
 });
 
+bot.hears('⚡ Performance', async (ctx) => {
+	await ctx.reply('📊 Loading performance statistics...');
+	try {
+		const metrics = getAnalysisMetrics();
+		const { getAnalysisCacheStats } = await import('./storage/analysis-cache');
+		const cacheStats = await getAnalysisCacheStats();
+		
+		let report = '⚡ Performance Optimization Status:\n\n';
+		
+		// Analysis Metrics
+		report += '🧠 AI Analysis Performance:\n';
+		report += `📊 Total Requests: ${metrics.totalRequests}\n`;
+		report += `💾 Cache Hits: ${metrics.cacheHits} (${metrics.cacheHitRate.toFixed(1)}%)\n`;
+		report += `🔥 Cache Misses: ${metrics.cacheMisses}\n`;
+		report += `🌐 API Calls: ${metrics.apiCalls}\n`;
+		report += `⚡ Avg Latency: ${metrics.avgLatency.toFixed(0)}ms\n`;
+		report += `❌ Error Rate: ${metrics.errorRate.toFixed(1)}%\n\n`;
+		
+		// Cache Statistics
+		report += '🗄️ Analysis Cache Stats:\n';
+		report += `💾 Cached Analyses: ${cacheStats.totalCached}\n`;
+		if (cacheStats.oldestEntry) {
+			const oldestDate = new Date(cacheStats.oldestEntry);
+			report += `📅 Oldest: ${oldestDate.toLocaleDateString()}\n`;
+		}
+		if (cacheStats.newestEntry) {
+			const newestDate = new Date(cacheStats.newestEntry);
+			report += `🆕 Newest: ${newestDate.toLocaleDateString()}\n`;
+		}
+		
+		// Performance Benefits
+		report += '\n💰 Cost Savings:\n';
+		const savedCalls = metrics.cacheHits;
+		const estimatedSavings = savedCalls * 0.001; // Rough estimate
+		report += `💸 API Calls Saved: ${savedCalls}\n`;
+		report += `💰 Est. Cost Saved: $${estimatedSavings.toFixed(3)}\n\n`;
+		
+		// Optimization Tips
+		if (metrics.cacheHitRate < 50) {
+			report += '💡 Tip: Cache hit rate is low. Consider increasing cache size.\n';
+		} else if (metrics.cacheHitRate > 80) {
+			report += '✅ Excellent cache performance! System is well optimized.\n';
+		}
+		
+		await ctx.reply(report, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	} catch (err) {
+		await ctx.reply(`Performance check failed: ${err}`, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	}
+});
+
+bot.hears('🔍 Duplicates', async (ctx) => {
+	await ctx.reply('🔍 Checking for duplicate articles...');
+	try {
+		const { loadPostedIds } = await import('./storage');
+		const postedIds = await loadPostedIds();
+		
+		const articles = await fetchAllArticles(undefined, { maxAgeHours: 24 * 7 });
+		const newOnes = await filterNewArticles(articles, { maxAgeHours: 24 * 7 });
+		
+		let report = '🔍 Duplicate Prevention Status:\n\n';
+		report += `📊 Total Articles Found: ${articles.length}\n`;
+		report += `🆕 New (Not Posted): ${newOnes.length}\n`;
+		report += `✅ Already Posted: ${articles.length - newOnes.length}\n`;
+		report += `💾 Tracked IDs: ${postedIds.size}\n\n`;
+		
+		report += '🎯 Next Posts Preview (Newest First):\n';
+		const targetCategory = (process.env.TARGET_CATEGORY as ContentCategory) || 'AI Tool';
+		const categorizedArticles = filterArticlesByCategory(newOnes, targetCategory);
+		// Sort by newest first
+		categorizedArticles.sort((a, b) => b.pubDate.localeCompare(a.pubDate));
+		
+		if (categorizedArticles.length > 0) {
+			const preview = categorizedArticles.slice(0, 3);
+			preview.forEach((article, i) => {
+				const domain = getSourceDomain(article.link);
+				const timeAgo = getTimeAgo(article.pubDate);
+				report += `${i + 1}. ${domain} (${timeAgo}): ${article.title.substring(0, 40)}...\n`;
+			});
+		} else {
+			report += 'No new articles in target category.\n';
+		}
+		
+		report += `\n🏷️ Target Category: ${targetCategory}\n`;
+		report += `📢 Target Channel: ${process.env.TELEGRAM_TARGET_CHAT_ID || 'Not set'}\n`;
+		
+		await ctx.reply(report, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	} catch (err) {
+		await ctx.reply(`Duplicate check failed: ${err}`, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	}
+});
+
+bot.hears('🔧 Admin Tools', async (ctx) => {
+	await ctx.reply('🔧 **Admin Tools Panel**\n\nSelect an admin function from the menu below:', {
+		reply_markup: createAdminMenu().reply_markup
+	});
+});
+
+// Admin menu handlers
+bot.hears('🔧 Debug Feeds', async (ctx) => {
+	await ctx.reply('Testing each feed individually...');
+	try {
+		const { DEFAULT_FEEDS } = await import('./data-aggregator');
+		
+		let report = 'Feed Status Report:\n\n';
+		for (const feedUrl of DEFAULT_FEEDS) {
+			try {
+				const domain = new URL(feedUrl).hostname.replace(/^www\./, '');
+				const { fetchRssFeed } = await import('./data-aggregator');
+				const articles = await fetchRssFeed(feedUrl);
+				report += `✅ ${domain}: ${articles.length} articles\n`;
+			} catch (err) {
+				const domain = new URL(feedUrl).hostname.replace(/^www\./, '');
+				report += `❌ ${domain}: Failed\n`;
+			}
+		}
+		
+		await ctx.reply(report, {
+			reply_markup: createAdminMenu().reply_markup
+		});
+	} catch (err) {
+		await ctx.reply('Debug feeds failed.');
+	}
+});
+
+bot.hears('🧹 Reset Cache', async (ctx) => {
+	await ctx.reply('🧹 Resetting cache files...');
+	try {
+		const fs = require('fs');
+		const path = require('path');
+		
+		const dataDir = path.join(process.cwd(), 'data');
+		const analysisCacheFile = path.join(dataDir, 'analysis-cache.json');
+		const postedFile = path.join(dataDir, 'posted.json');
+		
+		let resetCount = 0;
+		let report = '🧹 **Cache Reset Report**\n\n';
+		
+		// Reset analysis cache
+		if (fs.existsSync(analysisCacheFile)) {
+			try {
+				fs.unlinkSync(analysisCacheFile);
+				report += '✅ Analysis cache cleared\n';
+				resetCount++;
+			} catch (err) {
+				report += '❌ Failed to clear analysis cache\n';
+			}
+		} else {
+			report += 'ℹ️ Analysis cache already empty\n';
+		}
+		
+		// Reset posted articles
+		if (fs.existsSync(postedFile)) {
+			try {
+				fs.unlinkSync(postedFile);
+				report += '✅ Seen articles list cleared\n';
+				resetCount++;
+			} catch (err) {
+				report += '❌ Failed to clear seen articles\n';
+			}
+		} else {
+			report += 'ℹ️ Seen articles list already empty\n';
+		}
+		
+		report += `\n🎉 **Reset Complete!** (${resetCount} files cleared)\n\n`;
+		report += '**Effects:**\n';
+		report += '• All articles will be treated as new\n';
+		report += '• AI analysis cache starts fresh\n';
+		report += '• Performance optimization resets\n';
+		
+		await ctx.reply(report, {
+			reply_markup: createAdminMenu().reply_markup
+		});
+		
+	} catch (err) {
+		await ctx.reply(`Cache reset failed: ${err}`, {
+			reply_markup: createAdminMenu().reply_markup
+		});
+	}
+});
+
+bot.hears('🗑️ Clear Seen Articles', async (ctx) => {
+	await ctx.reply('🗑️ Clearing seen articles...');
+	try {
+		const fs = require('fs');
+		const path = require('path');
+		
+		const postedFile = path.join(process.cwd(), 'data', 'posted.json');
+		
+		if (fs.existsSync(postedFile)) {
+			fs.unlinkSync(postedFile);
+			await ctx.reply('✅ **Seen Articles Cleared!**\n\nAll articles will now be treated as new and available for posting again.', {
+				reply_markup: createAdminMenu().reply_markup
+			});
+		} else {
+			await ctx.reply('ℹ️ **No Seen Articles Found**\n\nSeen articles list is already empty.', {
+				reply_markup: createAdminMenu().reply_markup
+			});
+		}
+		
+	} catch (err) {
+		await ctx.reply(`Failed to clear seen articles: ${err}`, {
+			reply_markup: createAdminMenu().reply_markup
+		});
+	}
+});
+
+bot.hears('🗑️ Delete All Posts', async (ctx) => {
+	await ctx.reply('⚠️ **DANGER ZONE**\n\nThis will delete ALL posts from your target channel.\n\nType `/deletechannel` to confirm or use the menu to go back.', {
+		reply_markup: createAdminMenu().reply_markup
+	});
+});
+
+bot.hears('🗑️ Delete Recent Posts', async (ctx) => {
+	await ctx.reply('🗑️ **Delete Recent Posts**\n\nUse these commands to delete recent messages:\n\n• `/deletelast 5` - Delete last 5 posts\n• `/deletelast 10` - Delete last 10 posts\n• `/deletelast 25` - Delete last 25 posts\n\nOr type a custom number (1-50).', {
+		reply_markup: createAdminMenu().reply_markup
+	});
+});
+
+bot.hears('⚡ Performance Stats', async (ctx) => {
+	// Redirect to main performance handler
+	ctx.message.text = '⚡ Performance';
+	return;
+});
+
+bot.hears('🔍 Duplicate Check', async (ctx) => {
+	// Redirect to main duplicates handler  
+	ctx.message.text = '🔍 Duplicates';
+	return;
+});
+
 bot.hears('🔧 Debug', async (ctx) => {
 	await ctx.reply('Testing each feed individually...');
 	try {
@@ -1511,6 +1776,185 @@ bot.command('cleanseen', async (ctx) => {
 		
 	} catch (err) {
 		await ctx.reply(`Failed to clear seen articles: ${err}`, {
+			reply_markup: createMainMenu().reply_markup
+		});
+	}
+});
+
+bot.command('deletechannel', async (ctx) => {
+	counters.commandsHandled.inc({ command: 'deletechannel' });
+	try {
+		const targetChatId = process.env.TELEGRAM_TARGET_CHAT_ID;
+		
+		if (!targetChatId) {
+			await ctx.reply('❌ **No Target Channel Configured**\n\nPlease set TELEGRAM_TARGET_CHAT_ID in your environment variables.', {
+				reply_markup: createMainMenu().reply_markup
+			});
+			return;
+		}
+
+		await ctx.reply('🗑️ **Channel Cleanup Started**\n\nDeleting all messages from the target channel...\n\n⚠️ This may take a few minutes for channels with many messages.');
+
+		let deletedCount = 0;
+		let errorCount = 0;
+		let currentMessageId = 1;
+		let consecutiveErrors = 0;
+		const maxConsecutiveErrors = 50; // Stop if too many consecutive errors
+
+		logger.info({ targetChatId }, 'Starting channel cleanup');
+
+		// Delete messages in batches to avoid rate limits
+		while (consecutiveErrors < maxConsecutiveErrors) {
+			try {
+				// Try to delete the current message ID
+				await bot.telegram.deleteMessage(targetChatId, currentMessageId);
+				deletedCount++;
+				consecutiveErrors = 0; // Reset error counter
+				
+				// Log progress every 10 deletions
+				if (deletedCount % 10 === 0) {
+					logger.info({ deletedCount, currentMessageId }, 'Channel cleanup progress');
+				}
+				
+				// Small delay to avoid hitting rate limits too hard
+				if (deletedCount % 5 === 0) {
+					await new Promise(resolve => setTimeout(resolve, 100));
+				}
+				
+			} catch (err) {
+				errorCount++;
+				consecutiveErrors++;
+				
+				// Common errors that are expected
+				const errorMsg = err instanceof Error ? err.message : String(err);
+				if (errorMsg.includes('message to delete not found') || 
+					errorMsg.includes('Bad Request: message can\'t be deleted') ||
+					errorMsg.includes('MESSAGE_ID_INVALID')) {
+					// These are expected - message doesn't exist or can't be deleted
+				} else if (errorMsg.includes('Too Many Requests')) {
+					// Rate limited - wait longer
+					logger.warn({ currentMessageId, errorMsg }, 'Rate limited, waiting...');
+					await new Promise(resolve => setTimeout(resolve, 2000));
+					consecutiveErrors--; // Don't count rate limits as consecutive errors
+				} else {
+					// Unexpected error
+					logger.warn({ currentMessageId, errorMsg }, 'Unexpected error during deletion');
+				}
+			}
+			
+			currentMessageId++;
+			
+			// Update progress every 50 attempts
+			if (currentMessageId % 50 === 0) {
+				const progressMsg = `🗑️ **Cleanup Progress**\n\n` +
+					`✅ Deleted: ${deletedCount} messages\n` +
+					`📍 Checking message ID: ${currentMessageId}\n` +
+					`❌ Errors: ${errorCount}\n\n` +
+					`Still working...`;
+				
+				try {
+					await ctx.reply(progressMsg);
+				} catch (updateErr) {
+					// Ignore update errors
+				}
+			}
+		}
+
+		const finalReport = `🗑️ **Channel Cleanup Complete!**\n\n` +
+			`✅ **Deleted:** ${deletedCount} messages\n` +
+			`📍 **Checked up to:** Message ID ${currentMessageId}\n` +
+			`❌ **Errors:** ${errorCount}\n\n` +
+			`${deletedCount > 0 ? '🎉 Channel successfully cleaned!' : 'ℹ️ No messages found to delete.'}`;
+
+		await ctx.reply(finalReport, {
+			reply_markup: createMainMenu().reply_markup
+		});
+
+		logger.info({ 
+			deletedCount, 
+			errorCount, 
+			finalMessageId: currentMessageId,
+			targetChatId 
+		}, 'Channel cleanup completed');
+
+	} catch (err) {
+		const errorMsg = err instanceof Error ? err.message : String(err);
+		await ctx.reply(`❌ **Channel cleanup failed:** ${errorMsg}`, {
+			reply_markup: createMainMenu().reply_markup
+		});
+		
+		logger.error({ err, targetChatId: process.env.TELEGRAM_TARGET_CHAT_ID }, 'Channel cleanup failed');
+	}
+});
+
+bot.command('deletelast', async (ctx) => {
+	counters.commandsHandled.inc({ command: 'deletelast' });
+	try {
+		const args = ctx.message.text.split(' ').slice(1);
+		const count = args.length > 0 ? parseInt(args[0] || '5') : 5;
+		
+		if (isNaN(count) || count < 1 || count > 50) {
+			await ctx.reply('❌ **Invalid Count**\n\nPlease specify a number between 1 and 50.\n\nExample: `/deletelast 10`', {
+				reply_markup: createMainMenu().reply_markup
+			});
+			return;
+		}
+
+		const targetChatId = process.env.TELEGRAM_TARGET_CHAT_ID;
+		
+		if (!targetChatId) {
+			await ctx.reply('❌ **No Target Channel Configured**\n\nPlease set TELEGRAM_TARGET_CHAT_ID in your environment variables.', {
+				reply_markup: createMainMenu().reply_markup
+			});
+			return;
+		}
+
+		await ctx.reply(`🗑️ **Deleting Last ${count} Messages**\n\nAttempting to delete the most recent ${count} messages from the channel...`);
+
+		let deletedCount = 0;
+		let checkedCount = 0;
+		let currentMessageId = 999999; // Start from a high number and work backwards
+		
+		logger.info({ targetChatId, count }, 'Starting last messages deletion');
+
+		// Work backwards from a high message ID to find and delete recent messages
+		while (deletedCount < count && checkedCount < count * 10) { // Safety limit
+			try {
+				await bot.telegram.deleteMessage(targetChatId, currentMessageId);
+				deletedCount++;
+				logger.info({ deletedCount, messageId: currentMessageId }, 'Deleted message');
+				
+				// Small delay between deletions
+				await new Promise(resolve => setTimeout(resolve, 200));
+				
+			} catch (err) {
+				const errorMsg = err instanceof Error ? err.message : String(err);
+				if (errorMsg.includes('Too Many Requests')) {
+					// Rate limited - wait longer
+					await new Promise(resolve => setTimeout(resolve, 2000));
+					continue; // Don't increment counters
+				}
+				// Message not found or can't be deleted - continue to next
+			}
+			
+			currentMessageId--;
+			checkedCount++;
+		}
+
+		const resultMsg = `🗑️ **Deletion Complete!**\n\n` +
+			`✅ **Deleted:** ${deletedCount} messages\n` +
+			`📍 **Checked:** ${checkedCount} message IDs\n\n` +
+			`${deletedCount > 0 ? '🎉 Recent messages removed!' : 'ℹ️ No recent messages found to delete.'}`;
+
+		await ctx.reply(resultMsg, {
+			reply_markup: createMainMenu().reply_markup
+		});
+
+		logger.info({ deletedCount, checkedCount }, 'Last messages deletion completed');
+
+	} catch (err) {
+		const errorMsg = err instanceof Error ? err.message : String(err);
+		await ctx.reply(`❌ **Deletion failed:** ${errorMsg}`, {
 			reply_markup: createMainMenu().reply_markup
 		});
 	}
