@@ -1,8 +1,7 @@
 import OpenAI from 'openai';
 import Groq from 'groq-sdk';
 import axios from 'axios';
-import { Article, AnalysisResult } from '../types';
-import { logger } from '../logger';
+import { Article } from '../types';
 
 export type AIProvider = 'openai' | 'deepseek' | 'groq';
 

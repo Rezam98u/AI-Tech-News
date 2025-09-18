@@ -1,49 +1,46 @@
 {
-  // Visit https://aka.ms/tsconfig to read more about this file
   "compilerOptions": {
     // File Layout
     "rootDir": "src",
     "outDir": "dist",
-
+    
     // Environment Settings
-    // See also https://aka.ms/tsconfig/module
     "module": "commonjs",
-    "target": "es2020",
+    "target": "es2022",
+    "lib": ["es2022"],
     "types": ["node"],
-    // For nodejs:
-    // "lib": ["esnext"],
-    // "types": ["node"],
-    // and npm install -D @types/node
-
-    // Other Outputs
+    "moduleResolution": "node",
+    
+    // Performance optimizations
+    "incremental": true,
+    "tsBuildInfoFile": ".tsbuildinfo",
+    
+    // Production optimizations (can be overridden in build scripts)
     "sourceMap": true,
-    "declaration": true,
-    "declarationMap": true,
-
-    // Stricter Typechecking Options
+    "declaration": false,
+    "declarationMap": false,
+    "removeComments": true,
+    
+    // Strict type checking
+    "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
-
-    // Style Options
-    // "noImplicitReturns": true,
-    // "noImplicitOverride": true,
-    // "noUnusedLocals": true,
-    // "noUnusedParameters": true,
-    // "noFallthroughCasesInSwitch": true,
-    // "noPropertyAccessFromIndexSignature": true,
-
-    // Recommended Options
-    "strict": true,
-    "jsx": "react-jsx",
-    "verbatimModuleSyntax": false,
-    "isolatedModules": true,
-    "noUncheckedSideEffectImports": true,
-    "moduleDetection": "force",
-    "skipLibCheck": true,
-
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    
+    // Module resolution
     "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node",
     "forceConsistentCasingInFileNames": true,
-  }
+    "skipLibCheck": true,
+    
+    // Modern features
+    "isolatedModules": true,
+    "verbatimModuleSyntax": false
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", ".tsbuildinfo"]
 }

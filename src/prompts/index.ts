@@ -1,4 +1,4 @@
-import { logger } from '../logger';
+// Logger import removed - not used in this file
 
 export interface DeveloperPrompt {
 	id: string;

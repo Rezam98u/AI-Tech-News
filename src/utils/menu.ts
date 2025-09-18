@@ -1,4 +1,4 @@
-import { Telegraf, Markup } from 'telegraf';
+import { Markup } from 'telegraf';
 
 export interface MenuCommand {
 	command: string;
@@ -58,22 +58,7 @@ export function createMainMenu() {
 	]).resize().persistent();
 }
 
-export function createCategoryMenu() {
-	return Markup.keyboard([
-		['🛠️ AI Tools', '📰 Tech News', '💼 Business'],
-		['🔍 Jobs', '💻 Developer Prompts', '📊 Categories'],
-		['📋 Raw', '🏠 Main Menu']
-	]).resize().persistent();
-}
-
-export function createToolsMenu() {
-	return Markup.keyboard([
-		['🤖 Analyze', '🧪 Test Post', '📡 Feeds'],
-		['📊 Categories', '📋 Raw', '⏰ Recent'],
-		['💻 Dev Prompts DB', '🐙 GitHub Trending'],
-		['🏠 Main Menu']
-	]).resize().persistent();
-}
+// Removed unused createCategoryMenu and createToolsMenu functions
 
 export function createAdminMenu() {
 	return Markup.keyboard([
