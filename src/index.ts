@@ -381,6 +381,7 @@ async function sendPostWithImage(chatId: string, message: string, imageUrl?: str
 	logger.info({ 
 		hasImageUrl: !!imageUrl, 
 		imageUrl: imageUrl?.substring(0, 100) + '...',
+		messageLength: message.length,
 		chatId 
 	}, 'Attempting to send post with image');
 
@@ -392,10 +393,37 @@ async function sendPostWithImage(chatId: string, message: string, imageUrl?: str
 				throw new Error('Invalid URL format');
 			}
 
-			// Try to send with image first
-			logger.info({ imageUrl: imageUrl.substring(0, 100) + '...' }, 'Sending photo to Telegram');
+			// Check if message is too long for Telegram caption (1024 char limit)
+			if (message.length > 1024) {
+				logger.info({ 
+					messageLength: message.length,
+					limit: 1024 
+				}, 'Message too long for caption, splitting into image + text');
+				
+				// Send image with short caption, then send full text
+				const shortCaption = '📰 Latest AI Tech News';
+				
+				await bot.telegram.sendPhoto(chatId, imageUrl, {
+					caption: shortCaption,
+					parse_mode: 'Markdown',
+				});
+				
+				// Send full message as separate text
+				await bot.telegram.sendMessage(chatId, message, { 
+					link_preview_options: { is_disabled: true },
+					parse_mode: 'Markdown'
+				});
+				
+				logger.info('Photo and text sent successfully (split method)');
+				return;
+			}
+
+			// Try to send with image first (if message is short enough)
+			logger.info({ 
+				imageUrl: imageUrl.substring(0, 100) + '...',
+				messageLength: message.length 
+			}, 'Sending photo with caption to Telegram');
 			
-			// Try different methods for better compatibility
 			const photoOptions = {
 				caption: message,
 				parse_mode: 'Markdown' as const,
