@@ -2,7 +2,7 @@
  * Bot menu handlers - extracted from main index.ts
  */
 import { Telegraf } from 'telegraf';
-import { createMainMenu, createAdminMenu, formatCommandsList } from '../utils/menu';
+import { createMainMenu, createAdminMenu, createPostingControlMenu, formatCommandsList } from '../utils/menu';
 import { fetchAllArticles, getRecentArticles } from '../data-aggregator';
 import { filterNewArticles } from '../storage';
 import { getAnalysisMetrics } from '../ai-analysis/optimized';
@@ -11,6 +11,7 @@ import { getTimeAgo, getSourceDomain } from '../utils/time';
 import { getTrendingReposForTelegram } from '../github-api';
 import { getPromptsForTelegramByCategory } from '../prompts';
 import { createEnhancedPost, sendPostWithImage } from '../services/post-service';
+import { enableAutoPosting, disableAutoPosting, toggleAutoPosting, getSchedulerStatus } from './scheduler';
 
 /**
  * Register all menu handlers
@@ -34,12 +35,14 @@ export function registerMenuHandlers(bot: Telegraf) {
 • 🇮🇷 Persian language support
 • 📊 Performance monitoring
 • 🗑️ Channel management tools
+• ⚙️ **Automatic posting control** (disabled by default)
 
 **Quick Commands:**
 • Use menu buttons below for easy navigation
 • Type /latest for recent articles
 • Type /analyze for AI analysis demo
 • Type /performance for system stats
+• Type /postingstatus for posting control
 
 **Categories:**
 • 🛠️ AI Tools & Apps
@@ -48,11 +51,18 @@ export function registerMenuHandlers(bot: Telegraf) {
 • 🔍 Job Opportunities
 • 💻 Developer Prompts
 
+**Posting Control:**
+• 📊 **Posting Status** - Check current state
+• 🔄 **Toggle Auto Posting** - Quick enable/disable
+• ⚙️ **Posting Control Panel** - Full control menu
+
 **Admin Tools:**
 • Cache management
 • Channel cleanup
 • Performance monitoring
 • Debug utilities
+
+**Safety Note:** Automatic posting is disabled by default for safety. Use the posting control menu to enable when ready.
 
 For detailed commands list, tap **Commands List** below.`;
 
@@ -677,6 +687,13 @@ For detailed commands list, tap **Commands List** below.`;
 		});
 	});
 
+	// Posting control menu handler
+	bot.hears('📊 Posting Control', async (ctx) => {
+		await ctx.reply('📊 **Posting Control Panel**\n\nManage automatic posting settings and monitor status:', {
+			reply_markup: createPostingControlMenu().reply_markup
+		});
+	});
+
 	// Admin menu handlers (simplified versions - full implementations are in commands.ts)
 	bot.hears('🔧 Debug Feeds', async (ctx) => {
 		await ctx.reply('Testing each feed individually...');
@@ -877,6 +894,85 @@ For detailed commands list, tap **Commands List** below.`;
 		} catch (err) {
 			await ctx.reply(`❌ **Channel Test Failed**\n\nError: ${err}\n\nPlease check your channel configuration and bot permissions.`, {
 				reply_markup: createAdminMenu().reply_markup
+			});
+		}
+	});
+
+	// Automatic posting control menu handlers
+	bot.hears('✅ Enable Auto Posting', async (ctx) => {
+		try {
+			enableAutoPosting();
+			await ctx.reply('✅ **Automatic Posting Enabled**\n\nThe bot will now automatically post new articles to the channel.\n\n*Note: Automatic posting is disabled by default for safety.*', {
+				reply_markup: createPostingControlMenu().reply_markup
+			});
+		} catch (err) {
+			await ctx.reply('Failed to enable automatic posting.', {
+				reply_markup: createPostingControlMenu().reply_markup
+			});
+		}
+	});
+
+	bot.hears('⏸️ Disable Auto Posting', async (ctx) => {
+		try {
+			disableAutoPosting();
+			await ctx.reply('⏸️ **Automatic Posting Disabled**\n\nThe bot will no longer automatically post new articles to the channel.\n\n*This is the default safe state.*', {
+				reply_markup: createPostingControlMenu().reply_markup
+			});
+		} catch (err) {
+			await ctx.reply('Failed to disable automatic posting.', {
+				reply_markup: createPostingControlMenu().reply_markup
+			});
+		}
+	});
+
+	bot.hears('🔄 Toggle Auto Posting', async (ctx) => {
+		try {
+			const newState = toggleAutoPosting();
+			const status = newState ? 'Enabled' : 'Disabled';
+			const emoji = newState ? '✅' : '⏸️';
+			
+			await ctx.reply(`${emoji} **Automatic Posting ${status}**\n\nAutomatic posting to channel is now ${status.toLowerCase()}.`, {
+				reply_markup: createPostingControlMenu().reply_markup
+			});
+		} catch (err) {
+			await ctx.reply('Failed to toggle automatic posting.', {
+				reply_markup: createPostingControlMenu().reply_markup
+			});
+		}
+	});
+
+	bot.hears('📊 Posting Status', async (ctx) => {
+		try {
+			const status = getSchedulerStatus();
+			const autoPostingStatus = status.autoPostingEnabled ? '✅ Enabled' : '⏸️ Disabled';
+			const schedulerStatus = status.isRunning ? '🟢 Running' : '🔴 Stopped';
+			const processingStatus = status.isSchedulerRunning ? '⏳ Processing' : '💤 Idle';
+			
+			let report = `📊 **Scheduler Status Report**\n\n`;
+			report += `🤖 **Automatic Posting:** ${autoPostingStatus}\n`;
+			report += `⚙️ **Scheduler:** ${schedulerStatus}\n`;
+			report += `🔄 **Current State:** ${processingStatus}\n\n`;
+			
+			report += `⚙️ **Configuration:**\n`;
+			report += `• Target Category: ${status.configuration.targetCategory}\n`;
+			report += `• Target Channel: ${status.configuration.targetChannel || 'Not configured'}\n`;
+			report += `• Cron Pattern: ${status.configuration.cronPattern}\n\n`;
+			
+			report += `🎮 **Available Commands:**\n`;
+			report += `• \`/enableposting\` - Enable automatic posting\n`;
+			report += `• \`/disableposting\` - Disable automatic posting\n`;
+			report += `• \`/toggleposting\` - Toggle automatic posting\n`;
+			report += `• \`/postingstatus\` - Show this status\n\n`;
+			report += `ℹ️ **Note:** Automatic posting is disabled by default for safety.\n`;
+			report += `Use \`/enableposting\` to activate when ready.`;
+			
+			await ctx.reply(report, {
+				parse_mode: 'Markdown',
+				reply_markup: createPostingControlMenu().reply_markup
+			});
+		} catch (err) {
+			await ctx.reply('Failed to get posting status.', {
+				reply_markup: createPostingControlMenu().reply_markup
 			});
 		}
 	});

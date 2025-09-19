@@ -77,6 +77,8 @@ async function startBot(): Promise<void> {
 		// Register start command
 		bot.start(asyncHandler(async (ctx) => {
 			counters.commandsHandled.inc({ command: 'start' });
+			
+			// Send welcome message
 			await ctx.reply(
 				'🚀 *AI Pipeline Bot is online!*\n\nWelcome to your AI Tech News hub. Use the menu below to navigate:', 
 				{ 
@@ -84,6 +86,38 @@ async function startBot(): Promise<void> {
 					reply_markup: createMainMenu().reply_markup
 				}
 			);
+			
+			// Show the last fetched article
+			try {
+				const { fetchAllArticles } = await import('./data-aggregator');
+				const { createEnhancedPost, sendPostWithImage } = await import('./services/post-service');
+				const { formatDistanceToNow } = await import('./utils/time');
+				
+				// Fetch recent articles and get the most recent one
+				const articles = await fetchAllArticles(undefined, { maxAgeHours: 24 });
+				
+				if (articles.length > 0) {
+					const latestArticle = articles[0]!; // Already sorted by newest first
+					const timeSinceFetch = formatDistanceToNow(new Date(latestArticle.pubDate));
+					const headerMessage = `📰 *Latest Fetched Article* (${timeSinceFetch} ago):`;
+					
+					await ctx.reply(headerMessage, { parse_mode: 'Markdown' });
+					
+					const message = await createEnhancedPost(latestArticle);
+					await sendPostWithImage(ctx.chat.id.toString(), message, latestArticle.imageUrl);
+				} else {
+					await ctx.reply('📰 *No recent articles have been fetched yet.*', { 
+						parse_mode: 'Markdown',
+						link_preview_options: { is_disabled: true } 
+					});
+				}
+				
+			} catch (err) {
+				logger.error({ err }, 'Failed to show latest fetched article in start command');
+				await ctx.reply('📰 *Unable to retrieve latest fetched article.*', { 
+					parse_mode: 'Markdown' 
+				});
+			}
 		}));
 		
 		// Register all command handlers

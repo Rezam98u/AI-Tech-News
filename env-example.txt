@@ -23,6 +23,10 @@ TELEGRAM_TARGET_CHAT_ID=@your_channel_name_or_chat_id
 # Optional: Target category for auto-posting (default: AI Tool)
 TARGET_CATEGORY=AI Tool
 
+# Optional: Automatic posting control (default: false - disabled)
+# Set to 'true' to enable automatic posting to channel
+AUTO_POSTING_ENABLED=false
+
 # Optional: Port for metrics server (default: 3000)
 PORT=3000
 

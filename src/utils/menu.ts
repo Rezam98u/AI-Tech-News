@@ -43,22 +43,36 @@ export const MENU_COMMANDS: MenuCommand[] = [
 	{ command: 'cleanseen', description: '🗑️ Clear Seen Articles', category: 'admin' },
 	{ command: 'deletechannel', description: '🗑️ Delete All Channel Posts', category: 'admin' },
 	{ command: 'deletelast', description: '🗑️ Delete Recent Posts', category: 'admin' },
+	{ command: 'enableposting', description: '✅ Enable Auto Posting', category: 'admin' },
+	{ command: 'disableposting', description: '⏸️ Disable Auto Posting', category: 'admin' },
+	{ command: 'toggleposting', description: '🔄 Toggle Auto Posting', category: 'admin' },
+	{ command: 'postingstatus', description: '📊 Posting Status', category: 'admin' },
 ];
 
 export function createMainMenu() {
 	return Markup.keyboard([
 		['📰 Latest News', '📅 Today', '📊 This Week'],
 		['🛠️ AI Tools', '📰 Tech News', '💼 Business'],
-		['🔍 Jobs', '💻 Developer Prompts', '🤖 Analyze'],
+		['🔍 Jobs', '💻 Developer Prompts', '📊 Categories'],
 		['🧪 Test Post', '🧪 Test Persian', '🌐 Test Translation'],
-		['🇺🇸 Test English', '📡 Feeds', '📊 Categories'],
-		['💻 Dev Prompts DB', '🐙 GitHub Trending'],
-		['⚡ Performance', '🔍 Duplicates', '📋 Raw'],
-		['🔧 Admin Tools', '❓ Help', '📱 Menu']
+		['🇺🇸 Test English', '📡 Feeds', '📋 Raw'],
+		['💻 Dev Prompts DB', '🐙 GitHub Trending', '🤖 Analyze'],
+		['📊 Posting Status', '🔄 Toggle Auto Posting', '⚡ Performance'],
+		['📊 Posting Control', '🔧 Admin Tools', '❓ Help'],
+		['📱 Menu']
 	]).resize().persistent();
 }
 
 // Removed unused createCategoryMenu and createToolsMenu functions
+
+export function createPostingControlMenu() {
+	return Markup.keyboard([
+		['📊 Posting Status', '🔄 Toggle Auto Posting'],
+		['✅ Enable Auto Posting', '⏸️ Disable Auto Posting'],
+		['⏱️ Scheduler Test', '📢 Channel Test'],
+		['🏠 Main Menu']
+	]).resize().persistent();
+}
 
 export function createAdminMenu() {
 	return Markup.keyboard([
@@ -66,7 +80,7 @@ export function createAdminMenu() {
 		['🧹 Reset Cache', '🗑️ Clear Seen Articles'],
 		['🗑️ Delete All Posts', '🗑️ Delete Recent Posts'],
 		['⚡ Performance Stats', '🔍 Duplicate Check'],
-		['🏠 Main Menu']
+		['📊 Posting Control', '🏠 Main Menu']
 	]).resize().persistent();
 }
 

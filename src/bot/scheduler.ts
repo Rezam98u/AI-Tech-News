@@ -25,8 +25,8 @@ export class SchedulerService {
 			logger.warn('TELEGRAM_TARGET_CHAT_ID not set; scheduler will not post');
 		}
 
-		// Schedule to run every second (for testing and quick responses)
-		cron.schedule('* * * * * *', async () => {
+		// Schedule to run every 90 seconds
+		cron.schedule('*/90 * * * * *', async () => {
 			counters.cronRuns.inc();
 			
 			// Prevent concurrent scheduler runs
@@ -46,7 +46,18 @@ export class SchedulerService {
 			}
 		});
 
-		logger.info('Article scheduler started');
+		logger.info({
+			autoPostingEnabled: this.isAutoPostingEnabled(),
+			note: 'Automatic posting is disabled by default for safety'
+		}, 'Article scheduler started');
+	}
+
+	/**
+	 * Check if automatic posting is enabled
+	 */
+	private isAutoPostingEnabled(): boolean {
+		const autoPostingEnabled = process.env.AUTO_POSTING_ENABLED === 'true';
+		return autoPostingEnabled;
 	}
 
 	/**
@@ -54,6 +65,12 @@ export class SchedulerService {
 	 */
 	private async processArticles(): Promise<void> {
 		try {
+			// Check if automatic posting is enabled
+			if (!this.isAutoPostingEnabled()) {
+				logger.debug('scheduler: automatic posting is disabled');
+				return;
+			}
+
 			const targetChat = process.env.TELEGRAM_TARGET_CHAT_ID;
 			
 			// Fetch articles from the last week
@@ -213,11 +230,41 @@ export class SchedulerService {
 	}
 
 	/**
+	 * Enable automatic posting
+	 */
+	enableAutoPosting(): void {
+		process.env.AUTO_POSTING_ENABLED = 'true';
+		logger.info('Automatic posting enabled');
+	}
+
+	/**
+	 * Disable automatic posting
+	 */
+	disableAutoPosting(): void {
+		process.env.AUTO_POSTING_ENABLED = 'false';
+		logger.info('Automatic posting disabled');
+	}
+
+	/**
+	 * Toggle automatic posting
+	 */
+	toggleAutoPosting(): boolean {
+		const isEnabled = this.isAutoPostingEnabled();
+		if (isEnabled) {
+			this.disableAutoPosting();
+		} else {
+			this.enableAutoPosting();
+		}
+		return !isEnabled; // Return new state
+	}
+
+	/**
 	 * Get scheduler status
 	 */
 	getStatus(): {
 		isRunning: boolean;
 		isSchedulerRunning: boolean;
+		autoPostingEnabled: boolean;
 		configuration: {
 			targetCategory: string;
 			targetChannel?: string;
@@ -227,11 +274,12 @@ export class SchedulerService {
 		return {
 			isRunning: true, // Scheduler is always running once started
 			isSchedulerRunning: this.isSchedulerRunning,
-		configuration: {
-			targetCategory: (process.env.TARGET_CATEGORY as ContentCategory) || 'AI Tool',
-			...(process.env.TELEGRAM_TARGET_CHAT_ID && { targetChannel: process.env.TELEGRAM_TARGET_CHAT_ID }),
-			cronPattern: '* * * * * *' // Every second
-		}
+			autoPostingEnabled: this.isAutoPostingEnabled(),
+			configuration: {
+				targetCategory: (process.env.TARGET_CATEGORY as ContentCategory) || 'AI Tool',
+				...(process.env.TELEGRAM_TARGET_CHAT_ID && { targetChannel: process.env.TELEGRAM_TARGET_CHAT_ID }),
+				cronPattern: '*/90 * * * * *' // Every 90 seconds
+			}
 		};
 	}
 }
@@ -267,4 +315,25 @@ export function triggerSchedulerManually(): Promise<void> {
  */
 export function getSchedulerStatus(): ReturnType<SchedulerService['getStatus']> {
 	return schedulerService.getStatus();
+}
+
+/**
+ * Enable automatic posting
+ */
+export function enableAutoPosting(): void {
+	schedulerService.enableAutoPosting();
+}
+
+/**
+ * Disable automatic posting
+ */
+export function disableAutoPosting(): void {
+	schedulerService.disableAutoPosting();
+}
+
+/**
+ * Toggle automatic posting
+ */
+export function toggleAutoPosting(): boolean {
+	return schedulerService.toggleAutoPosting();
 }

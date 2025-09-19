@@ -9,6 +9,7 @@ import { fetchAllArticles, getRecentArticles } from '../data-aggregator';
 import { getPostReadyAnalysis, getAnalysisMetrics } from '../ai-analysis/optimized';
 import { categorizeAllArticles, ContentCategory } from '../categorizer';
 import { getTimeAgo, getSourceDomain } from '../utils/time';
+import { enableAutoPosting, disableAutoPosting, toggleAutoPosting, getSchedulerStatus } from './scheduler';
 
 /**
  * Post creation and sending functions (will be moved to post service later)
@@ -430,78 +431,116 @@ export function registerCommands(bot: Telegraf) {
 				return;
 			}
 
-			await ctx.reply('🗑️ **Channel Cleanup Started**\n\nDeleting all messages from the target channel...\n\n⚠️ This may take a few minutes for channels with many messages.');
+			await ctx.reply('🗑️ **Channel Cleanup Started**\n\nScanning and deleting messages from the channel...\n\n⚠️ This process will work backwards from recent messages.');
 
 			let deletedCount = 0;
-			let errorCount = 0;
-			let currentMessageId = 1;
-			let consecutiveErrors = 0;
-			const maxConsecutiveErrors = 50; // Stop if too many consecutive errors
+			let checkedCount = 0;
+			let maxMessageId = 1000000; // Start from a very high number
+			let consecutiveNotFound = 0;
+			const maxConsecutiveNotFound = 100;
 
-			logger.info({ targetChatId }, 'Starting channel cleanup');
+			logger.info({ targetChatId }, 'Starting comprehensive channel cleanup');
 
-			// Delete messages in batches to avoid rate limits
-			while (consecutiveErrors < maxConsecutiveErrors) {
+			// Find the range by trying to delete messages starting from a recent estimated range
+			await ctx.reply('📍 **Starting deletion process...**');
+			
+			// Start from a reasonable range for most channels (recent messages)
+			let startMessageId = 100000; // Start from a reasonably high number
+			let foundAnyMessage = false;
+			
+			// First, find if there are any recent messages by testing a few high IDs
+			for (let testId = startMessageId; testId > startMessageId - 1000; testId -= 100) {
 				try {
-					// Try to delete the current message ID
-					await ctx.telegram.deleteMessage(targetChatId, currentMessageId);
+					await ctx.telegram.deleteMessage(targetChatId, testId);
 					deletedCount++;
-					consecutiveErrors = 0; // Reset error counter
+					foundAnyMessage = true;
+					logger.info({ messageId: testId }, 'Found and deleted message during range finding');
+					break;
+				} catch (err) {
+					// Continue searching
+				}
+			}
+			
+			if (!foundAnyMessage) {
+				// Try a broader range starting from 1
+				startMessageId = 1;
+				await ctx.reply('📍 **No recent messages found, scanning from beginning...**');
+			}
+			
+			await ctx.reply(`📍 **Deleting messages starting from ID ${startMessageId}...**`);
+
+			// Main deletion loop: work through the message range
+			consecutiveNotFound = 0;
+			checkedCount = 0;
+			let currentMessageId = startMessageId;
+			
+			// If we found a message in the high range, work backwards; otherwise work forwards
+			const increment = foundAnyMessage ? -1 : 1;
+			const shouldContinue = foundAnyMessage ? 
+				() => currentMessageId >= 1 && consecutiveNotFound < maxConsecutiveNotFound :
+				() => currentMessageId <= maxMessageId && consecutiveNotFound < maxConsecutiveNotFound;
+			
+			while (shouldContinue()) {
+				const messageId = currentMessageId;
+				checkedCount++;
+				
+				try {
+					await ctx.telegram.deleteMessage(targetChatId, messageId);
+					deletedCount++;
+					consecutiveNotFound = 0; // Reset counter when we find a message
 					
-					// Log progress every 10 deletions
-					if (deletedCount % 10 === 0) {
-						logger.info({ deletedCount, currentMessageId }, 'Channel cleanup progress');
+					// Log progress
+					if (deletedCount % 5 === 0) {
+						logger.info({ deletedCount, messageId }, 'Channel cleanup progress');
 					}
 					
-					// Small delay to avoid hitting rate limits too hard
-					if (deletedCount % 5 === 0) {
-						await new Promise(resolve => setTimeout(resolve, 100));
+					// Rate limiting
+					if (deletedCount % 10 === 0) {
+						await new Promise(resolve => setTimeout(resolve, 500));
+						
+						// Progress update
+						const progressMsg = `🗑️ **Cleanup Progress**\n\n` +
+							`✅ Deleted: ${deletedCount} messages\n` +
+							`📍 Current ID: ${messageId}\n` +
+							`📊 Checked: ${checkedCount} IDs\n\n` +
+							`Working backwards...`;
+						
+						try {
+							await ctx.reply(progressMsg);
+						} catch {} // Ignore update errors
 					}
 					
 				} catch (err) {
-					errorCount++;
-					consecutiveErrors++;
-					
-					// Common errors that are expected
 					const errorMsg = err instanceof Error ? err.message : String(err);
+					
 					if (errorMsg.includes('message to delete not found') || 
 						errorMsg.includes('Bad Request: message can\'t be deleted') ||
 						errorMsg.includes('MESSAGE_ID_INVALID')) {
-						// These are expected - message doesn't exist or can't be deleted
+						consecutiveNotFound++;
 					} else if (errorMsg.includes('Too Many Requests')) {
 						// Rate limited - wait longer
-						logger.warn({ currentMessageId, errorMsg }, 'Rate limited, waiting...');
-						await new Promise(resolve => setTimeout(resolve, 2000));
-						consecutiveErrors--; // Don't count rate limits as consecutive errors
+						logger.warn({ messageId, errorMsg }, 'Rate limited, waiting...');
+						await new Promise(resolve => setTimeout(resolve, 3000));
+						currentMessageId -= increment; // Retry this message ID by undoing the increment that will happen at the end
+						continue;
 					} else {
 						// Unexpected error
-						logger.warn({ currentMessageId, errorMsg }, 'Unexpected error during deletion');
+						logger.warn({ messageId, errorMsg }, 'Unexpected error during deletion');
 					}
 				}
 				
-				currentMessageId++;
+				// Small delay between attempts
+				await new Promise(resolve => setTimeout(resolve, 200));
 				
-				// Update progress every 50 attempts
-				if (currentMessageId % 50 === 0) {
-					const progressMsg = `🗑️ **Cleanup Progress**\n\n` +
-						`✅ Deleted: ${deletedCount} messages\n` +
-						`📍 Checking message ID: ${currentMessageId}\n` +
-						`❌ Errors: ${errorCount}\n\n` +
-						`Still working...`;
-					
-					try {
-						await ctx.reply(progressMsg);
-					} catch (updateErr) {
-						// Ignore update errors
-					}
-				}
+				// Move to next message ID
+				currentMessageId += increment;
 			}
 
 			const finalReport = `🗑️ **Channel Cleanup Complete!**\n\n` +
-				`✅ **Deleted:** ${deletedCount} messages\n` +
-				`📍 **Checked up to:** Message ID ${currentMessageId}\n` +
-				`❌ **Errors:** ${errorCount}\n\n` +
-				`${deletedCount > 0 ? '🎉 Channel successfully cleaned!' : 'ℹ️ No messages found to delete.'}`;
+				`✅ **Successfully deleted:** ${deletedCount} messages\n` +
+				`📊 **Total checked:** ${checkedCount} message IDs\n` +
+				`📍 **Scan range:** ${startMessageId} ${foundAnyMessage ? '(backwards)' : '(forwards)'}\n\n` +
+				`${deletedCount > 0 ? '🎉 Channel successfully cleaned!' : 'ℹ️ No deletable messages found.'}`;
 
 			await ctx.reply(finalReport, {
 				reply_markup: createMainMenu().reply_markup
@@ -509,14 +548,15 @@ export function registerCommands(bot: Telegraf) {
 
 			logger.info({ 
 				deletedCount, 
-				errorCount, 
-				finalMessageId: currentMessageId,
+				checkedCount,
+				startMessageId,
+				foundAnyMessage,
 				targetChatId 
 			}, 'Channel cleanup completed');
 
 		} catch (err) {
 			const errorMsg = err instanceof Error ? err.message : String(err);
-			await ctx.reply(`❌ **Channel cleanup failed:** ${errorMsg}`, {
+			await ctx.reply(`❌ **Channel cleanup failed:** ${errorMsg}\n\nPossible issues:\n• Bot lacks admin permissions in target channel\n• Target channel ID is incorrect\n• Rate limiting by Telegram`, {
 				reply_markup: createMainMenu().reply_markup
 			});
 			
@@ -592,6 +632,89 @@ export function registerCommands(bot: Telegraf) {
 		} catch (err) {
 			const errorMsg = err instanceof Error ? err.message : String(err);
 			await ctx.reply(`❌ **Deletion failed:** ${errorMsg}`, {
+				reply_markup: createMainMenu().reply_markup
+			});
+		}
+	});
+
+	// Automatic posting control commands
+	bot.command('enableposting', async (ctx) => {
+		counters.commandsHandled.inc({ command: 'enableposting' });
+		try {
+			enableAutoPosting();
+			await ctx.reply('✅ **Automatic Posting Enabled**\n\nThe bot will now automatically post new articles to the channel.\n\n*Note: Automatic posting is disabled by default for safety.*', {
+				reply_markup: createMainMenu().reply_markup
+			});
+		} catch (err) {
+			await ctx.reply('Failed to enable automatic posting.', {
+				reply_markup: createMainMenu().reply_markup
+			});
+		}
+	});
+
+	bot.command('disableposting', async (ctx) => {
+		counters.commandsHandled.inc({ command: 'disableposting' });
+		try {
+			disableAutoPosting();
+			await ctx.reply('⏸️ **Automatic Posting Disabled**\n\nThe bot will no longer automatically post new articles to the channel.\n\n*This is the default safe state.*', {
+				reply_markup: createMainMenu().reply_markup
+			});
+		} catch (err) {
+			await ctx.reply('Failed to disable automatic posting.', {
+				reply_markup: createMainMenu().reply_markup
+			});
+		}
+	});
+
+	bot.command('toggleposting', async (ctx) => {
+		counters.commandsHandled.inc({ command: 'toggleposting' });
+		try {
+			const newState = toggleAutoPosting();
+			const status = newState ? 'Enabled' : 'Disabled';
+			const emoji = newState ? '✅' : '⏸️';
+			
+			await ctx.reply(`${emoji} **Automatic Posting ${status}**\n\nAutomatic posting to channel is now ${status.toLowerCase()}.`, {
+				reply_markup: createMainMenu().reply_markup
+			});
+		} catch (err) {
+			await ctx.reply('Failed to toggle automatic posting.', {
+				reply_markup: createMainMenu().reply_markup
+			});
+		}
+	});
+
+	bot.command('postingstatus', async (ctx) => {
+		counters.commandsHandled.inc({ command: 'postingstatus' });
+		try {
+			const status = getSchedulerStatus();
+			const autoPostingStatus = status.autoPostingEnabled ? '✅ Enabled' : '⏸️ Disabled';
+			const schedulerStatus = status.isRunning ? '🟢 Running' : '🔴 Stopped';
+			const processingStatus = status.isSchedulerRunning ? '⏳ Processing' : '💤 Idle';
+			
+			let report = `📊 **Scheduler Status Report**\n\n`;
+			report += `🤖 **Automatic Posting:** ${autoPostingStatus}\n`;
+			report += `⚙️ **Scheduler:** ${schedulerStatus}\n`;
+			report += `🔄 **Current State:** ${processingStatus}\n\n`;
+			
+			report += `⚙️ **Configuration:**\n`;
+			report += `• Target Category: ${status.configuration.targetCategory}\n`;
+			report += `• Target Channel: ${status.configuration.targetChannel || 'Not configured'}\n`;
+			report += `• Cron Pattern: ${status.configuration.cronPattern}\n\n`;
+			
+			report += `🎮 **Commands:**\n`;
+			report += `• \`/enableposting\` - Enable automatic posting\n`;
+			report += `• \`/disableposting\` - Disable automatic posting\n`;
+			report += `• \`/toggleposting\` - Toggle automatic posting\n`;
+			report += `• \`/postingstatus\` - Show this status\n\n`;
+			report += `ℹ️ **Note:** Automatic posting is disabled by default for safety.\n`;
+			report += `Use \`/enableposting\` to activate when ready.`;
+			
+			await ctx.reply(report, {
+				parse_mode: 'Markdown',
+				reply_markup: createMainMenu().reply_markup
+			});
+		} catch (err) {
+			await ctx.reply('Failed to get posting status.', {
 				reply_markup: createMainMenu().reply_markup
 			});
 		}
