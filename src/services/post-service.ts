@@ -5,7 +5,8 @@ import { Telegraf } from 'telegraf';
 import { Article } from '../types';
 import { getPostReadyAnalysis } from '../ai-analysis/optimized';
 import { getTimeAgo } from '../utils/time';
-import { isPersianText, isValuableBusinessImpact, getLabels } from '../utils/persian-utils';
+import { isPersianText, isValuableBusinessImpact, getLabelsForFormat, formatPersianText } from '../utils/persian-utils';
+import { calculateHtmlLength, splitIntoThreads, buildHtmlPost, LIMITS } from '../utils/html-utils';
 import { logger } from '../logger';
 
 /**
@@ -18,33 +19,9 @@ export class PostService {
 		this.bot = bot;
 	}
 
-	/**
-	 * Shorten a URL for display purposes
-	 */
-	private shortenLink(url: string, maxLength: number = 60): string {
-		try {
-			const urlObj = new URL(url);
-			const domain = urlObj.hostname.replace(/^www\./, '');
-			const path = urlObj.pathname + urlObj.search;
-			
-			if (domain.length + path.length <= maxLength) {
-				return domain + path;
-			}
-			
-			const availableSpace = maxLength - domain.length - 3; // 3 for "..."
-			if (availableSpace > 10) {
-				return domain + path.substring(0, availableSpace) + '...';
-			}
-			
-			return domain;
-		} catch {
-			// If URL parsing fails, just truncate
-			return url.length > maxLength ? url.substring(0, maxLength - 3) + '...' : url;
-		}
-	}
 
 	/**
-	 * Create an enhanced post with AI analysis and proper formatting
+	 * Create an enhanced post with AI analysis and HTML formatting
 	 */
 	async createEnhancedPost(article: Article, translateToPersian: boolean = true): Promise<string> {
 		try {
@@ -61,46 +38,59 @@ export class PostService {
 			// Detect if content is in Persian (either original or translated)
 			const isPersian = isPersianText(article.title + ' ' + analysis.tldr + ' ' + analysis.description) || translateToPersian;
 			
-			// Build the enhanced post with tldr, bullets, business_implication, and more
-			const hashtags = analysis.hashtags.length > 0 
-				? '\n\n' + analysis.hashtags.map(tag => `#${tag}`).join(' ')
-				: '';
-			
-			const shortLink = this.shortenLink(article.link);
 			const timeAgo = getTimeAgo(article.pubDate);
 			
-			// Build bullets section
-			const bulletsSection = analysis.bullets && analysis.bullets.length > 0
-				? '\n\n🔸 ' + analysis.bullets.join('\n🔸 ')
-				: '';
+			// Format content for Persian if needed
+			let formattedTldr = analysis.tldr;
+			let formattedDescription = analysis.description;
+			let formattedBullets = analysis.bullets || [];
+			let formattedBusinessImpact = analysis.business_implication?.trim() || '';
 			
-			// Build business implication section (only when valuable)
-			const businessImpact = analysis.business_implication?.trim() || '';
-			const isValueableBusinessImpact = isValuableBusinessImpact(businessImpact, isPersian);
-			const labels = getLabels(isPersian);
-
-			const businessSection = isValueableBusinessImpact
-				? `\n\n${labels.BUSINESS_IMPACT} ${businessImpact}`
-				: '';
+			if (isPersian) {
+				formattedTldr = formatPersianText(formattedTldr);
+				formattedDescription = formatPersianText(formattedDescription);
+				formattedBullets = formattedBullets.map(bullet => formatPersianText(bullet));
+				if (formattedBusinessImpact) {
+					formattedBusinessImpact = formatPersianText(formattedBusinessImpact);
+				}
+			}
 			
-			logger.debug({
-				title: article.title?.substring(0, 50),
-				hasBusinessImpact: !!businessImpact,
-				isValuable: isValueableBusinessImpact,
-				businessImpactLength: businessImpact.length,
-				isPersian: isPersian,
-				translateToPersian
-			}, 'Business impact evaluation');
+			// Check if business impact is valuable
+			const isValueableBusinessImpact = isValuableBusinessImpact(formattedBusinessImpact, isPersian);
 			
-			const enhancedPost = `💡 ${analysis.tldr}${bulletsSection}${businessSection}
-
-${analysis.description}${hashtags}
-
-⏰ ${timeAgo}
-🔗 ${shortLink}`;
-
-			logger.info({ title: article.title, postLength: enhancedPost.length, isPersian, translateToPersian }, 'Enhanced post created successfully');
-			return enhancedPost;
+			// Build HTML post using utility function
+			const htmlPost = buildHtmlPost({
+				tldr: formattedTldr,
+				bullets: formattedBullets,
+				businessImpact: isValueableBusinessImpact ? formattedBusinessImpact : '',
+				description: formattedDescription,
+				hashtags: analysis.hashtags,
+				timeAgo,
+				link: article.link,
+				isPersian,
+				maxLength: LIMITS.SINGLE_POST
+			});
+			
+			const postLength = calculateHtmlLength(htmlPost);
+			
+			logger.info({ 
+				title: article.title, 
+				postLength, 
+				isPersian, 
+				translateToPersian,
+				hasBusinessImpact: isValueableBusinessImpact 
+			}, 'HTML enhanced post created successfully');
+			
+			// Check if post needs to be split into threads
+			if (postLength > LIMITS.SINGLE_POST) {
+				logger.info({ 
+					postLength, 
+					limit: LIMITS.SINGLE_POST,
+					willCreateThread: true 
+				}, 'Post exceeds single post limit, client should consider threading');
+			}
+			
+			return htmlPost;
 			
 		} catch (err) {
 			logger.error({ 
@@ -110,34 +100,83 @@ ${analysis.description}${hashtags}
 			}, 'Failed to create enhanced post, using fallback');
 			
 			// Fallback to simple format if AI analysis fails
-			const shortLink = this.shortenLink(article.link);
 			const timeAgo = getTimeAgo(article.pubDate);
 			const isPersian = isPersianText(article.title) || translateToPersian;
-			const labels = getLabels(isPersian);
+			const labels = getLabelsForFormat(isPersian, 'html');
 			
-			const fallbackTitle = isPersian 
-				? '💡 آخرین تحول در حوزه هوش مصنوعی و فناوری'
-				: '💡 Latest development in AI/tech space';
+			const fallbackTldr = isPersian 
+				? 'آخرین تحول در حوزه هوش مصنوعی و فناوری'
+				: 'Latest development in AI/tech space';
 			
-			const bulletPoints = '\n\n🔸 ' + labels.FALLBACK_BULLETS.join('\n🔸 ');
+			const fallbackPost = buildHtmlPost({
+				tldr: fallbackTldr,
+				bullets: [...labels.FALLBACK_BULLETS],
+				description: `${article.title} - ${labels.FALLBACK_DESCRIPTION_SUFFIX}`,
+				hashtags: [...labels.FALLBACK_HASHTAGS],
+				timeAgo,
+				link: article.link,
+				isPersian,
+				maxLength: LIMITS.SINGLE_POST
+			});
 			
-			return `${fallbackTitle}${bulletPoints}
-
-⏰ ${timeAgo}
-🔗 ${shortLink}`;
+			return fallbackPost;
 		}
 	}
 
 	/**
-	 * Send a post with optional image, handling Telegram's limitations
+	 * Create threaded posts for long content
+	 */
+	async createThreadedPost(article: Article, translateToPersian: boolean = true): Promise<string[]> {
+		try {
+			const fullPost = await this.createEnhancedPost(article, translateToPersian);
+			const postLength = calculateHtmlLength(fullPost);
+			
+			// If post fits in single message, return as is
+			if (postLength <= LIMITS.SINGLE_POST) {
+				return [fullPost];
+			}
+			
+			logger.info({ 
+				postLength, 
+				limit: LIMITS.SINGLE_POST,
+				willSplit: true 
+			}, 'Creating threaded post for long content');
+			
+			// Split into thread messages
+			const { messages } = splitIntoThreads(fullPost, LIMITS.THREAD_POST);
+			
+			logger.info({ 
+				originalLength: postLength,
+				threadCount: messages.length,
+				title: article.title 
+			}, 'Created threaded post');
+			
+			return messages;
+			
+		} catch (err) {
+			logger.error({ 
+				err: err instanceof Error ? err.message : String(err), 
+				article: article.title 
+			}, 'Failed to create threaded post, returning single post');
+			
+			// Fallback to single post
+			return [await this.createEnhancedPost(article, translateToPersian)];
+		}
+	}
+
+	/**
+	 * Send a post with optional image, handling Telegram's limitations and HTML formatting
 	 */
 	async sendPostWithImage(chatId: string, message: string, imageUrl?: string): Promise<void> {
+		const messageLength = calculateHtmlLength(message);
+		
 		logger.info({ 
 			hasImageUrl: !!imageUrl, 
 			imageUrl: imageUrl?.substring(0, 100) + '...',
-			messageLength: message.length,
+			messageLength,
+			htmlLength: messageLength,
 			chatId 
-		}, 'Attempting to send post with image');
+		}, 'Attempting to send HTML post with image');
 
 		if (imageUrl && imageUrl.trim()) {
 			try {
@@ -148,51 +187,51 @@ ${analysis.description}${hashtags}
 				}
 
 				// Check if message is too long for Telegram caption (1024 char limit)
-				if (message.length > 1024) {
+				if (messageLength > LIMITS.CAPTION_WITH_PHOTO) {
 					logger.info({ 
-						messageLength: message.length,
-						limit: 1024 
+						messageLength,
+						limit: LIMITS.CAPTION_WITH_PHOTO 
 					}, 'Message too long for caption, splitting into image + text');
 					
 					// Send image with short caption, then send full text
-					const shortCaption = '📰 Latest AI Tech News';
+					const shortCaption = '<b>📰 Latest AI Tech News</b>';
 					
 					await this.bot.telegram.sendPhoto(chatId, imageUrl, {
 						caption: shortCaption,
-						parse_mode: 'Markdown',
+						parse_mode: 'HTML',
 					});
 					
 					// Send full message as separate text
 					await this.bot.telegram.sendMessage(chatId, message, { 
 						link_preview_options: { is_disabled: true },
-						parse_mode: 'Markdown'
+						parse_mode: 'HTML'
 					});
 					
-					logger.info('Photo and text sent successfully (split method)');
+					logger.info('Photo and text sent successfully (split method with HTML)');
 					return;
 				}
 
 				// Try to send with image first (if message is short enough)
 				logger.info({ 
 					imageUrl: imageUrl.substring(0, 100) + '...',
-					messageLength: message.length 
-				}, 'Sending photo with caption to Telegram');
+					messageLength 
+				}, 'Sending photo with HTML caption to Telegram');
 				
 				const photoOptions = {
 					caption: message,
-					parse_mode: 'Markdown' as const,
+					parse_mode: 'HTML' as const,
 				};
 
 				// Method 1: Direct URL
 				try {
 					await this.bot.telegram.sendPhoto(chatId, imageUrl, photoOptions);
-					logger.info('Photo sent successfully via direct URL');
+					logger.info('Photo sent successfully via direct URL with HTML');
 				} catch (directError) {
 					logger.warn({ error: String(directError) }, 'Direct URL failed, trying with Input object');
 					
 					// Method 2: Using Input object (sometimes works better)
 					await this.bot.telegram.sendPhoto(chatId, { url: imageUrl }, photoOptions);
-					logger.info('Photo sent successfully via Input object');
+					logger.info('Photo sent successfully via Input object with HTML');
 				}
 			} catch (err) {
 				// If image fails, fall back to text only
@@ -200,21 +239,62 @@ ${analysis.description}${hashtags}
 				logger.warn({ 
 					error: errorMsg, 
 					imageUrl: imageUrl?.substring(0, 100) + '...' 
-				}, 'Failed to send image, falling back to text');
+				}, 'Failed to send image, falling back to HTML text');
 				
 				await this.bot.telegram.sendMessage(chatId, message, { 
 					link_preview_options: { is_disabled: true },
-					parse_mode: 'Markdown'
+					parse_mode: 'HTML'
 				});
 			}
 		} else {
 			// No image, send text only
-			logger.info('No image URL provided, sending text only');
+			logger.info('No image URL provided, sending HTML text only');
 			await this.bot.telegram.sendMessage(chatId, message, { 
 				link_preview_options: { is_disabled: true },
-				parse_mode: 'Markdown'
+				parse_mode: 'HTML'
 			});
 		}
+	}
+
+	/**
+	 * Send threaded posts as separate messages
+	 */
+	async sendThreadedPost(chatId: string, messages: string[], imageUrl?: string): Promise<void> {
+		logger.info({ 
+			messageCount: messages.length,
+			hasImageUrl: !!imageUrl,
+			chatId 
+		}, 'Sending threaded post');
+
+		for (let i = 0; i < messages.length; i++) {
+			const message = messages[i]!;
+			
+			// Send image only with the first message
+			const shouldIncludeImage = i === 0 && imageUrl;
+			
+			try {
+				await this.sendPostWithImage(chatId, message, shouldIncludeImage ? imageUrl : undefined);
+				
+				// Add delay between thread messages
+				if (i < messages.length - 1) {
+					await new Promise(resolve => setTimeout(resolve, 1000));
+				}
+				
+			} catch (err) {
+				logger.error({ 
+					error: err instanceof Error ? err.message : String(err),
+					messageIndex: i + 1,
+					totalMessages: messages.length 
+				}, 'Failed to send thread message');
+				
+				// Continue with next message even if one fails
+			}
+		}
+		
+		logger.info({ 
+			messageCount: messages.length,
+			chatId 
+		}, 'Threaded post sending completed');
 	}
 }
 
@@ -249,4 +329,15 @@ export async function createEnhancedPost(article: Article, translateToPersian?: 
 
 export async function sendPostWithImage(chatId: string, message: string, imageUrl?: string): Promise<void> {
 	return getPostService().sendPostWithImage(chatId, message, imageUrl);
+}
+
+/**
+ * New convenience functions for threaded posts
+ */
+export async function createThreadedPost(article: Article, translateToPersian?: boolean): Promise<string[]> {
+	return getPostService().createThreadedPost(article, translateToPersian);
+}
+
+export async function sendThreadedPost(chatId: string, messages: string[], imageUrl?: string): Promise<void> {
+	return getPostService().sendThreadedPost(chatId, messages, imageUrl);
 }

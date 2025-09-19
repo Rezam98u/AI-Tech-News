@@ -64,7 +64,8 @@ export function isValuableBusinessImpact(businessImpact: string, isPersian: bool
  * Persian language labels for business sections
  */
 export const PersianLabels = {
-	BUSINESS_IMPACT: '💼 **تأثیر کسب‌وکار:**',
+	BUSINESS_IMPACT: '💼 <b>تأثیر کسب‌وکار:</b>',
+	BUSINESS_IMPACT_MARKDOWN: '💼 **تأثیر کسب‌وکار:**',
 	TARGET_AUDIENCE: 'متخصصان کسب‌وکار، مدیران محصول، و رهبران فناوری',
 	FALLBACK_BULLETS: [
 		'تحول کلیدی در حوزه هوش مصنوعی/فناوری',
@@ -79,7 +80,8 @@ export const PersianLabels = {
  * English language labels for business sections
  */
 export const EnglishLabels = {
-	BUSINESS_IMPACT: '💼 **Business Impact:**',
+	BUSINESS_IMPACT: '💼 <b>Business Impact:</b>',
+	BUSINESS_IMPACT_MARKDOWN: '💼 **Business Impact:**',
 	TARGET_AUDIENCE: 'Business professionals, product managers, and tech leaders',
 	FALLBACK_BULLETS: [
 		'Key development in AI/tech space',
@@ -95,4 +97,89 @@ export const EnglishLabels = {
  */
 export function getLabels(isPersian: boolean) {
 	return isPersian ? PersianLabels : EnglishLabels;
+}
+
+/**
+ * Gets appropriate labels based on language and format
+ */
+export function getLabelsForFormat(isPersian: boolean, format: 'html' | 'markdown') {
+	const labels = isPersian ? PersianLabels : EnglishLabels;
+	
+	if (format === 'markdown') {
+		return {
+			...labels,
+			BUSINESS_IMPACT: labels.BUSINESS_IMPACT_MARKDOWN
+		};
+	}
+	
+	return labels;
+}
+
+/**
+ * Preserve English technical terms in Persian text for HTML
+ */
+export function preserveEnglishInPersian(text: string): string {
+	// Common AI/tech terms that should remain in English
+	const technicalTerms = [
+		'AI', 'API', 'ML', 'OpenAI', 'GitHub', 'ChatGPT', 'GPT', 
+		'LLM', 'NLP', 'MLOps', 'DevOps', 'SaaS', 'PaaS', 'IaaS',
+		'AWS', 'Azure', 'GCP', 'Docker', 'Kubernetes', 'React',
+		'Python', 'JavaScript', 'TypeScript', 'Node.js', 'TensorFlow',
+		'PyTorch', 'Transformer', 'BERT', 'Neural Network', 'Deep Learning',
+		'Machine Learning', 'Artificial Intelligence', 'API key'
+	];
+	
+	let preservedText = text;
+	
+	// Preserve technical terms
+	technicalTerms.forEach(term => {
+		const regex = new RegExp(`\\b${term}\\b`, 'gi');
+		preservedText = preservedText.replace(regex, (match) => `<code>${match}</code>`);
+	});
+	
+	return preservedText;
+}
+
+/**
+ * Apply Persian punctuation and formatting rules for HTML
+ */
+export function formatPersianText(text: string): string {
+	let formatted = text;
+	
+	// Apply Persian punctuation
+	formatted = formatted
+		.replace(/,/g, '،')          // Persian comma
+		.replace(/;/g, '؛')          // Persian semicolon
+		.replace(/\?/g, '؟');        // Persian question mark
+	
+	// Handle mixed RTL/LTR text (preserve English terms in code tags)
+	formatted = preserveEnglishInPersian(formatted);
+	
+	return formatted;
+}
+
+/**
+ * Check if text contains mixed RTL/LTR content
+ */
+export function hasMixedContent(text: string): boolean {
+	const persianRegex = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
+	const englishRegex = /[a-zA-Z]/;
+	
+	return persianRegex.test(text) && englishRegex.test(text);
+}
+
+/**
+ * Format business impact text for HTML with language-specific styling
+ */
+export function formatBusinessImpactHtml(businessImpact: string, isPersian: boolean): string {
+	if (!businessImpact?.trim()) return '';
+	
+	const labels = getLabels(isPersian);
+	let formatted = businessImpact;
+	
+	if (isPersian) {
+		formatted = formatPersianText(formatted);
+	}
+	
+	return `\n\n${labels.BUSINESS_IMPACT} ${formatted}`;
 }

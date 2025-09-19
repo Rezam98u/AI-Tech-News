@@ -80,9 +80,9 @@ async function startBot(): Promise<void> {
 			
 			// Send welcome message
 			await ctx.reply(
-				'🚀 *AI Pipeline Bot is online!*\n\nWelcome to your AI Tech News hub. Use the menu below to navigate:', 
+				'🚀 <b>AI Pipeline Bot is online!</b>\n\nWelcome to your AI Tech News hub. Use the menu below to navigate:', 
 				{ 
-					parse_mode: 'Markdown',
+					parse_mode: 'HTML',
 					reply_markup: createMainMenu().reply_markup
 				}
 			);
@@ -99,23 +99,23 @@ async function startBot(): Promise<void> {
 				if (articles.length > 0) {
 					const latestArticle = articles[0]!; // Already sorted by newest first
 					const timeSinceFetch = formatDistanceToNow(new Date(latestArticle.pubDate));
-					const headerMessage = `📰 *Latest Fetched Article* (${timeSinceFetch} ago):`;
+					const headerMessage = `📰 <b>Latest Fetched Article</b> (${timeSinceFetch} ago):`;
 					
-					await ctx.reply(headerMessage, { parse_mode: 'Markdown' });
+					await ctx.reply(headerMessage, { parse_mode: 'HTML' });
 					
 					const message = await createEnhancedPost(latestArticle);
 					await sendPostWithImage(ctx.chat.id.toString(), message, latestArticle.imageUrl);
 				} else {
-					await ctx.reply('📰 *No recent articles have been fetched yet.*', { 
-						parse_mode: 'Markdown',
+					await ctx.reply('📰 <b>No recent articles have been fetched yet.</b>', { 
+						parse_mode: 'HTML',
 						link_preview_options: { is_disabled: true } 
 					});
 				}
 				
 			} catch (err) {
 				logger.error({ err }, 'Failed to show latest fetched article in start command');
-				await ctx.reply('📰 *Unable to retrieve latest fetched article.*', { 
-					parse_mode: 'Markdown' 
+				await ctx.reply('📰 <b>Unable to retrieve latest fetched article.</b>', { 
+					parse_mode: 'HTML' 
 				});
 			}
 		}));

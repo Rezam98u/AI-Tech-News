@@ -68,7 +68,6 @@ function extractImageUrl(item: any): string | undefined {
 export const DEFAULT_FEEDS: string[] = [
 	'https://techcrunch.com/tag/artificial-intelligence/feed/',
 	'https://openai.com/blog/rss.xml',
-	'https://www.technologyreview.com/topic/artificial-intelligence/feed/',
 	'https://venturebeat.com/category/ai/feed/',
 	'https://www.theverge.com/rss/index.xml', // Main feed since AI-specific is 404
 	'https://huggingface.co/blog/feed.xml', // Hugging Face AI blog

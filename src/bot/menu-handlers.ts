@@ -3,7 +3,7 @@
  */
 import { Telegraf } from 'telegraf';
 import { createMainMenu, createAdminMenu, createPostingControlMenu, formatCommandsList } from '../utils/menu';
-import { fetchAllArticles, getRecentArticles } from '../data-aggregator';
+import { fetchAllArticles } from '../data-aggregator';
 import { filterNewArticles } from '../storage';
 import { getAnalysisMetrics } from '../ai-analysis/optimized';
 import { categorizeAllArticles, filterArticlesByCategory, ContentCategory } from '../categorizer';
@@ -20,54 +20,54 @@ export function registerMenuHandlers(bot: Telegraf) {
 
 	// Menu handling
 	bot.hears('📱 Menu', async (ctx) => {
-		await ctx.reply('📱 *Main Menu*', { 
-			parse_mode: 'Markdown',
+		await ctx.reply('📱 <b>Main Menu</b>', { 
+			parse_mode: 'HTML',
 			reply_markup: createMainMenu().reply_markup
 		});
 	});
 
 	bot.hears('❓ Help', async (ctx) => {
-		const helpMessage = `🤖 **AI Tech News Bot Help**
+		const helpMessage = `🤖 <b>AI Tech News Bot Help</b>
 
-**Main Features:**
+<b>Main Features:</b>
 • 📰 Latest news from AI/tech sources
 • 🤖 AI-powered content analysis  
 • 🇮🇷 Persian language support
 • 📊 Performance monitoring
 • 🗑️ Channel management tools
-• ⚙️ **Automatic posting control** (disabled by default)
+• ⚙️ <b>Automatic posting control</b> (disabled by default)
 
-**Quick Commands:**
+<b>Quick Commands:</b>
 • Use menu buttons below for easy navigation
 • Type /latest for recent articles
 • Type /analyze for AI analysis demo
 • Type /performance for system stats
 • Type /postingstatus for posting control
 
-**Categories:**
-• 🛠️ AI Tools & Apps
+<b>Categories:</b>
+• 🛠️ AI Tools &amp; Apps
 • 📰 Tech News Flash  
 • 💼 Business Use-Cases
 • 🔍 Job Opportunities
 • 💻 Developer Prompts
 
-**Posting Control:**
-• 📊 **Posting Status** - Check current state
-• 🔄 **Toggle Auto Posting** - Quick enable/disable
-• ⚙️ **Posting Control Panel** - Full control menu
+<b>Posting Control:</b>
+• 📊 <b>Posting Status</b> - Check current state
+• 🔄 <b>Toggle Auto Posting</b> - Quick enable/disable
+• ⚙️ <b>Posting Control Panel</b> - Full control menu
 
-**Admin Tools:**
+<b>Admin Tools:</b>
 • Cache management
 • Channel cleanup
 • Performance monitoring
 • Debug utilities
 
-**Safety Note:** Automatic posting is disabled by default for safety. Use the posting control menu to enable when ready.
+<b>Safety Note:</b> Automatic posting is disabled by default for safety. Use the posting control menu to enable when ready.
 
-For detailed commands list, tap **Commands List** below.`;
+For detailed commands list, tap <b>Commands List</b> below.`;
 
 		await ctx.reply(helpMessage, {
-			parse_mode: 'Markdown',
+			parse_mode: 'HTML',
 			reply_markup: createMainMenu().reply_markup
 		});
 	});
@@ -75,120 +75,9 @@ For detailed commands list, tap **Commands List** below.`;
 	bot.hears('❓ Commands List', async (ctx) => {
 		const commandsList = formatCommandsList();
 		await ctx.reply(commandsList, {
-			parse_mode: 'Markdown',
+			parse_mode: 'HTML',
 			reply_markup: createMainMenu().reply_markup
 		});
-	});
-
-	// News category handlers
-	bot.hears('📰 Latest News', async (ctx) => {
-		try {
-			const all = await fetchAllArticles();
-			const latestCount = Math.min(8, all.length);
-			let report = `📰 Latest ${latestCount} AI Tech News:\n\n`;
-			
-			const latest = all.slice(0, latestCount);
-			for (const article of latest) {
-				const timeAgo = getTimeAgo(article.pubDate);
-				const domain = getSourceDomain(article.link);
-				report += `📌 ${article.title}\n`;
-				report += `🌐 ${domain} • ⏰ ${timeAgo}\n\n`;
-			}
-			
-			await ctx.reply(report, {
-				reply_markup: createMainMenu().reply_markup
-			});
-		} catch (err) {
-			await ctx.reply('Failed to fetch latest articles.', {
-				reply_markup: createMainMenu().reply_markup
-			});
-		}
-	});
-
-	bot.hears('📅 Today', async (ctx) => {
-		try {
-			const all = await getRecentArticles(24);
-			let report = `📅 Today's AI Tech News (${all.length} articles):\n\n`;
-			
-			// Group by source
-			const bySource: { [key: string]: typeof all } = {};
-			all.forEach(article => {
-				const domain = getSourceDomain(article.link);
-				if (!bySource[domain]) bySource[domain] = [];
-				bySource[domain]!.push(article);
-			});
-			
-			Object.entries(bySource).forEach(([source, articles]) => {
-				report += `🔸 **${source}** (${articles.length})\n`;
-				articles.slice(0, 3).forEach(article => {
-					report += `  • ${article.title.substring(0, 80)}...\n`;
-				});
-				report += '\n';
-			});
-			
-			await ctx.reply(report, {
-				reply_markup: createMainMenu().reply_markup
-			});
-		} catch (err) {
-			await ctx.reply('Failed to fetch today\'s articles.', {
-				reply_markup: createMainMenu().reply_markup
-			});
-		}
-	});
-
-	bot.hears('📊 This Week', async (ctx) => {
-		try {
-			const all = await getRecentArticles(24 * 7);
-			let report = `📊 This Week's AI Tech News Summary (${all.length} articles):\n\n`;
-			
-			// Categorize articles
-			const categorized = categorizeAllArticles(all);
-			
-			Object.entries(categorized).forEach(([category, articles]) => {
-				if (articles.length > 0) {
-					const categoryEmoji = {
-						'AI Tool': '🛠️',
-						'Tech News': '📰',
-						'Business Use-Case': '💼',
-						'Job Opportunity': '🔍',
-						'Sponsored Deal': '💰',
-						'Developer Prompts': '💻'
-					}[category as ContentCategory] || '📋';
-					
-					report += `${categoryEmoji} **${category}** (${articles.length})\n`;
-					const preview = articles.slice(0, 3);
-					preview.forEach((article) => {
-						const domain = getSourceDomain(article.link);
-						report += `  • ${article.title.substring(0, 60)}... (${domain})\n`;
-					});
-					report += '\n';
-				}
-			});
-			
-			report += `📈 **Weekly Stats:**\n`;
-			report += `• Total articles: ${all.length}\n`;
-			const sources = [...new Set(all.map(a => getSourceDomain(a.link)))];
-			report += `• Sources: ${sources.length}\n`;
-			const top3Sources = Object.entries(
-				all.reduce((acc, a) => {
-					const source = getSourceDomain(a.link);
-					acc[source] = (acc[source] || 0) + 1;
-					return acc;
-				}, {} as Record<string, number>)
-			).sort(([,a], [,b]) => b - a).slice(0, 3);
-			
-			if (top3Sources.length > 0) {
-				report += `• Top sources: ${top3Sources.map(([source, count]) => `${source} (${count})`).join(', ')}\n`;
-			}
-			
-			await ctx.reply(report, {
-				reply_markup: createMainMenu().reply_markup
-			});
-		} catch (err) {
-			await ctx.reply('Failed to fetch weekly articles.', {
-				reply_markup: createMainMenu().reply_markup
-			});
-		}
 	});
 
 	// Category handlers
@@ -880,14 +769,14 @@ For detailed commands list, tap **Commands List** below.`;
 			}
 			
 			// Test sending a message to the target channel
-			const testMessage = '🧪 **Channel Test Message**\n\nThis is a test message from the AI Tech News Bot.\n\n✅ Channel posting is working correctly!';
+			const testMessage = '🧪 <b>Channel Test Message</b>\n\nThis is a test message from the AI Tech News Bot.\n\n✅ Channel posting is working correctly!';
 			
 			await ctx.telegram.sendMessage(targetChatId, testMessage, {
-				parse_mode: 'Markdown'
+				parse_mode: 'HTML'
 			});
 			
-			await ctx.reply(`✅ **Channel Test Successful!**\n\nTest message sent to channel: \`${targetChatId}\`\n\nChannel posting is working correctly.`, {
-				parse_mode: 'Markdown',
+			await ctx.reply(`✅ <b>Channel Test Successful!</b>\n\nTest message sent to channel: <code>${targetChatId}</code>\n\nChannel posting is working correctly.`, {
+				parse_mode: 'HTML',
 				reply_markup: createAdminMenu().reply_markup
 			});
 			
@@ -959,15 +848,13 @@ For detailed commands list, tap **Commands List** below.`;
 			report += `• Cron Pattern: ${status.configuration.cronPattern}\n\n`;
 			
 			report += `🎮 **Available Commands:**\n`;
-			report += `• \`/enableposting\` - Enable automatic posting\n`;
-			report += `• \`/disableposting\` - Disable automatic posting\n`;
 			report += `• \`/toggleposting\` - Toggle automatic posting\n`;
 			report += `• \`/postingstatus\` - Show this status\n\n`;
 			report += `ℹ️ **Note:** Automatic posting is disabled by default for safety.\n`;
-			report += `Use \`/enableposting\` to activate when ready.`;
+			report += `Use \`/toggleposting\` to enable when ready.`;
 			
 			await ctx.reply(report, {
-				parse_mode: 'Markdown',
+				parse_mode: 'HTML',
 				reply_markup: createPostingControlMenu().reply_markup
 			});
 		} catch (err) {

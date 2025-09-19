@@ -9,9 +9,6 @@ export interface MenuCommand {
 export const MENU_COMMANDS: MenuCommand[] = [
 	// Main commands
 	{ command: 'start', description: '🚀 Start Bot & Latest News', category: 'main' },
-	{ command: 'latest', description: '📰 Latest Articles', category: 'main' },
-	{ command: 'today', description: '📅 Today\'s News', category: 'main' },
-	{ command: 'week', description: '📊 This Week\'s News', category: 'main' },
 	
 	// News categories
 	{ command: 'aitools', description: '🛠️ AI Tools & Apps', category: 'news' },
@@ -27,6 +24,7 @@ export const MENU_COMMANDS: MenuCommand[] = [
 	{ command: 'testtranslate', description: '🌐 Test Translation', category: 'tools' },
 	{ command: 'testenglish', description: '🇺🇸 Test English Post', category: 'tools' },
 	{ command: 'feeds', description: '📡 Feed Status', category: 'tools' },
+	{ command: 'fetchfeed', description: '🎯 Fetch Specific Feed', category: 'tools' },
 	{ command: 'categories', description: '📊 Article Categories', category: 'tools' },
 	{ command: 'raw', description: '📋 Raw Articles', category: 'tools' },
 	{ command: 'recent', description: '⏰ Recent Articles', category: 'tools' },
@@ -43,15 +41,12 @@ export const MENU_COMMANDS: MenuCommand[] = [
 	{ command: 'cleanseen', description: '🗑️ Clear Seen Articles', category: 'admin' },
 	{ command: 'deletechannel', description: '🗑️ Delete All Channel Posts', category: 'admin' },
 	{ command: 'deletelast', description: '🗑️ Delete Recent Posts', category: 'admin' },
-	{ command: 'enableposting', description: '✅ Enable Auto Posting', category: 'admin' },
-	{ command: 'disableposting', description: '⏸️ Disable Auto Posting', category: 'admin' },
 	{ command: 'toggleposting', description: '🔄 Toggle Auto Posting', category: 'admin' },
 	{ command: 'postingstatus', description: '📊 Posting Status', category: 'admin' },
 ];
 
 export function createMainMenu() {
 	return Markup.keyboard([
-		['📰 Latest News', '📅 Today', '📊 This Week'],
 		['🛠️ AI Tools', '📰 Tech News', '💼 Business'],
 		['🔍 Jobs', '💻 Developer Prompts', '📊 Categories'],
 		['🧪 Test Post', '🧪 Test Persian', '🌐 Test Translation'],
@@ -108,10 +103,10 @@ export function formatCommandsList(): string {
 		admin: '🔧 Admin Tools'
 	};
 	
-	let result = '📱 *AI Tech News Bot Commands*\n\n';
+	let result = '📱 <b>AI Tech News Bot Commands</b>\n\n';
 	
 	Object.entries(categories).forEach(([category, title]) => {
-		result += `*${title}*\n`;
+		result += `<b>${title}</b>\n`;
 		const categoryCommands = MENU_COMMANDS.filter(cmd => cmd.category === category);
 		categoryCommands.forEach(cmd => {
 			result += `/${cmd.command} - ${cmd.description}\n`;

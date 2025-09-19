@@ -5,11 +5,10 @@ import { Telegraf } from 'telegraf';
 import { logger } from '../logger';
 import { counters } from '../metrics';
 import { createMainMenu } from '../utils/menu';
-import { fetchAllArticles, getRecentArticles } from '../data-aggregator';
+import { fetchAllArticles } from '../data-aggregator';
 import { getPostReadyAnalysis, getAnalysisMetrics } from '../ai-analysis/optimized';
-import { categorizeAllArticles, ContentCategory } from '../categorizer';
 import { getTimeAgo, getSourceDomain } from '../utils/time';
-import { enableAutoPosting, disableAutoPosting, toggleAutoPosting, getSchedulerStatus } from './scheduler';
+import { toggleAutoPosting, getSchedulerStatus } from './scheduler';
 
 /**
  * Post creation and sending functions (will be moved to post service later)
@@ -23,117 +22,94 @@ declare function shortenLink(url: string, maxLength?: number): string;
  */
 export function registerCommands(bot: Telegraf) {
 	
-	bot.command('latest', async (ctx) => {
-		counters.commandsHandled.inc({ command: 'latest' });
+	bot.command('fetchfeed', async (ctx) => {
+		counters.commandsHandled.inc({ command: 'fetchfeed' });
 		try {
-			const all = await fetchAllArticles();
-			const latestCount = Math.min(10, all.length);
-			let report = `📰 Latest ${latestCount} AI Tech News:\n\n`;
+			const args = ctx.message.text.split(' ').slice(1);
 			
-			const latest = all.slice(0, latestCount);
-		for (const article of latest) {
-			const timeAgo = getTimeAgo(article.pubDate);
-			const domain = getSourceDomain(article.link);
-			report += `📌 ${article.title}\n`;
-			report += `🌐 ${domain} • ⏰ ${timeAgo}\n\n`;
-			}
-			
-			await ctx.reply(report, {
-				reply_markup: createMainMenu().reply_markup
-			});
-		} catch (err) {
-			await ctx.reply('Failed to fetch latest articles.', {
-				reply_markup: createMainMenu().reply_markup
-			});
-			logger.error({ err }, 'latest command failed');
-		}
-	});
-
-	bot.command('today', async (ctx) => {
-		counters.commandsHandled.inc({ command: 'today' });
-		try {
-			const all = await getRecentArticles(24);
-			let report = `📅 Today's AI Tech News (${all.length} articles):\n\n`;
-			
-			// Group by source
-			const bySource: { [key: string]: typeof all } = {};
-			all.forEach(article => {
-				const domain = getSourceDomain(article.link);
-				if (!bySource[domain]) bySource[domain] = [];
-				bySource[domain]!.push(article);
-			});
-			
-			Object.entries(bySource).forEach(([source, articles]) => {
-				report += `🔸 **${source}** (${articles.length})\n`;
-			articles.slice(0, 3).forEach(article => {
-				report += `  • ${article.title.substring(0, 80)}...\n`;
+			if (args.length === 0) {
+				// Show available feeds
+				let report = `📡 <b>Fetch From Specific Feed</b>\n\n`;
+				report += `Usage: <code>/fetchfeed &lt;source&gt;</code>\n\n`;
+				report += `Available sources:\n`;
+				report += `• <code>techcrunch</code> - TechCrunch AI\n`;
+				report += `• <code>openai</code> - OpenAI Blog\n`;
+				report += `• <code>venturebeat</code> - VentureBeat AI\n`;
+				report += `• <code>theverge</code> - The Verge\n`;
+				report += `• <code>huggingface</code> - Hugging Face Blog\n`;
+				report += `• <code>google</code> - Google AI Blog\n\n`;
+				report += `Example: <code>/fetchfeed huggingface</code>`;
+				
+				await ctx.reply(report, {
+					parse_mode: 'HTML',
+					reply_markup: createMainMenu().reply_markup
 				});
-				report += '\n';
-			});
-			
-			await ctx.reply(report, {
-				reply_markup: createMainMenu().reply_markup
-			});
-		} catch (err) {
-			await ctx.reply('Failed to fetch today\'s articles.', {
-				reply_markup: createMainMenu().reply_markup
-			});
-		}
-	});
-
-	bot.command('week', async (ctx) => {
-		counters.commandsHandled.inc({ command: 'week' });
-		try {
-			const all = await getRecentArticles(24 * 7);
-			let report = `📊 This Week's AI Tech News Summary (${all.length} articles):\n\n`;
-			
-			// Categorize articles
-			const categorized = categorizeAllArticles(all);
-			
-			Object.entries(categorized).forEach(([category, articles]) => {
-				if (articles.length > 0) {
-					const categoryEmoji = {
-						'AI Tool': '🛠️',
-						'Tech News': '📰',
-						'Business Use-Case': '💼',
-						'Job Opportunity': '🔍',
-						'Sponsored Deal': '💰',
-						'Developer Prompts': '💻'
-					}[category as ContentCategory] || '📋';
-					
-					report += `${categoryEmoji} **${category}** (${articles.length})\n`;
-					const preview = articles.slice(0, 3);
-					preview.forEach((article) => {
-						const domain = getSourceDomain(article.link);
-						report += `  • ${article.title.substring(0, 60)}... (${domain})\n`;
-					});
-					report += '\n';
-				}
-			});
-			
-			report += `📈 **Weekly Stats:**\n`;
-			report += `• Total articles: ${all.length}\n`;
-			const sources = [...new Set(all.map(a => getSourceDomain(a.link)))];
-			report += `• Sources: ${sources.length}\n`;
-			const top3Sources = Object.entries(
-				all.reduce((acc, a) => {
-					const source = getSourceDomain(a.link);
-					acc[source] = (acc[source] || 0) + 1;
-					return acc;
-				}, {} as Record<string, number>)
-			).sort(([,a], [,b]) => b - a).slice(0, 3);
-			
-			if (top3Sources.length > 0) {
-				report += `• Top sources: ${top3Sources.map(([source, count]) => `${source} (${count})`).join(', ')}\n`;
+				return;
 			}
 			
-			await ctx.reply(report, {
-				reply_markup: createMainMenu().reply_markup
-			});
+			const source = args[0]!.toLowerCase();
+			
+			// Map source names to feed URLs
+			const feedMap: { [key: string]: string } = {
+				'techcrunch': 'https://techcrunch.com/tag/artificial-intelligence/feed/',
+				'openai': 'https://openai.com/blog/rss.xml',
+				'venturebeat': 'https://venturebeat.com/category/ai/feed/',
+				'theverge': 'https://www.theverge.com/rss/index.xml',
+				'huggingface': 'https://huggingface.co/blog/feed.xml',
+				'google': 'https://blog.google/technology/ai/rss/'
+			};
+			
+			const feedUrl = feedMap[source];
+			if (!feedUrl) {
+				await ctx.reply(`❌ <b>Unknown Source</b>: "${source}"\n\nUse <code>/fetchfeed</code> without arguments to see available sources.`, {
+					parse_mode: 'HTML',
+					reply_markup: createMainMenu().reply_markup
+				});
+				return;
+			}
+			
+			await ctx.reply(`🔄 <b>Fetching latest post from ${source}...</b>`, { parse_mode: 'HTML' });
+			
+			// Import the fetch function
+			const { fetchRssFeed } = await import('../data-aggregator');
+			const { createEnhancedPost, sendPostWithImage } = await import('../services/post-service');
+			
+			// Fetch articles from the specific feed
+			const articles = await fetchRssFeed(feedUrl);
+			
+			if (articles.length === 0) {
+				await ctx.reply(`📭 <b>No articles found</b> from ${source}.`, {
+					parse_mode: 'HTML',
+					reply_markup: createMainMenu().reply_markup
+				});
+				return;
+			}
+			
+			// Get the most recent article
+			const latestArticle = articles[0]!;
+			const sourceName = getSourceDomain(latestArticle.link);
+			
+			// Send header
+			const headerMessage = `📡 <b>Latest from ${sourceName}:</b>`;
+			await ctx.reply(headerMessage, { parse_mode: 'HTML' });
+			
+			// Create and send the enhanced post
+			const message = await createEnhancedPost(latestArticle);
+			await sendPostWithImage(ctx.chat!.id.toString(), message, latestArticle.imageUrl);
+			
+			logger.info({ 
+				source, 
+				feedUrl, 
+				title: latestArticle.title,
+				articlesFound: articles.length 
+			}, 'fetchfeed command completed');
+			
 		} catch (err) {
-			await ctx.reply('Failed to fetch weekly articles.', {
+			const errorMsg = err instanceof Error ? err.message : String(err);
+			await ctx.reply(`❌ **Failed to fetch feed:** ${errorMsg}`, {
 				reply_markup: createMainMenu().reply_markup
 			});
+			logger.error({ err }, 'fetchfeed command failed');
 		}
 	});
 
@@ -638,34 +614,6 @@ export function registerCommands(bot: Telegraf) {
 	});
 
 	// Automatic posting control commands
-	bot.command('enableposting', async (ctx) => {
-		counters.commandsHandled.inc({ command: 'enableposting' });
-		try {
-			enableAutoPosting();
-			await ctx.reply('✅ **Automatic Posting Enabled**\n\nThe bot will now automatically post new articles to the channel.\n\n*Note: Automatic posting is disabled by default for safety.*', {
-				reply_markup: createMainMenu().reply_markup
-			});
-		} catch (err) {
-			await ctx.reply('Failed to enable automatic posting.', {
-				reply_markup: createMainMenu().reply_markup
-			});
-		}
-	});
-
-	bot.command('disableposting', async (ctx) => {
-		counters.commandsHandled.inc({ command: 'disableposting' });
-		try {
-			disableAutoPosting();
-			await ctx.reply('⏸️ **Automatic Posting Disabled**\n\nThe bot will no longer automatically post new articles to the channel.\n\n*This is the default safe state.*', {
-				reply_markup: createMainMenu().reply_markup
-			});
-		} catch (err) {
-			await ctx.reply('Failed to disable automatic posting.', {
-				reply_markup: createMainMenu().reply_markup
-			});
-		}
-	});
-
 	bot.command('toggleposting', async (ctx) => {
 		counters.commandsHandled.inc({ command: 'toggleposting' });
 		try {
@@ -702,15 +650,13 @@ export function registerCommands(bot: Telegraf) {
 			report += `• Cron Pattern: ${status.configuration.cronPattern}\n\n`;
 			
 			report += `🎮 **Commands:**\n`;
-			report += `• \`/enableposting\` - Enable automatic posting\n`;
-			report += `• \`/disableposting\` - Disable automatic posting\n`;
 			report += `• \`/toggleposting\` - Toggle automatic posting\n`;
 			report += `• \`/postingstatus\` - Show this status\n\n`;
 			report += `ℹ️ **Note:** Automatic posting is disabled by default for safety.\n`;
-			report += `Use \`/enableposting\` to activate when ready.`;
+			report += `Use \`/toggleposting\` to enable when ready.`;
 			
 			await ctx.reply(report, {
-				parse_mode: 'Markdown',
+				parse_mode: 'HTML',
 				reply_markup: createMainMenu().reply_markup
 			});
 		} catch (err) {
