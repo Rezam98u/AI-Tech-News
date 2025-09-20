@@ -37,8 +37,7 @@ export function registerCommands(bot: Telegraf) {
 				report += `• <code>venturebeat</code> - VentureBeat AI\n`;
 				report += `• <code>theverge</code> - The Verge\n`;
 				report += `• <code>huggingface</code> - Hugging Face Blog\n`;
-				report += `• <code>google</code> - Google AI Blog\n`;
-				report += `• <code>reddit</code> - Reddit r/PromptEngineering\n\n`;
+				report += `• <code>google</code> - Google AI Blog\n\n`;
 				report += `Example: <code>/fetchfeed huggingface</code>`;
 				
 				await ctx.reply(report, {
@@ -57,8 +56,7 @@ export function registerCommands(bot: Telegraf) {
 				'venturebeat': 'https://venturebeat.com/category/ai/feed/',
 				'theverge': 'https://www.theverge.com/rss/index.xml',
 				'huggingface': 'https://huggingface.co/blog/feed.xml',
-				'google': 'https://blog.google/technology/ai/rss/',
-				'reddit': 'https://www.reddit.com/r/PromptEngineering/.rss'
+				'google': 'https://blog.google/technology/ai/rss/'
 			};
 			
 			const feedUrl = feedMap[source];

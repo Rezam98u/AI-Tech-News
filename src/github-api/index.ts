@@ -89,12 +89,15 @@ export async function searchTrendingRepos(options?: {
 			days = 7
 		} = options || {};
 
-		// Build search query for AI/ML repositories
+		// Build search query for AI/ML repositories with more flexible criteria
 		const queryParts = [
-			'created:>' + new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-			'stars:>10', // Minimum stars to filter out low-quality repos
-			...AI_ML_TOPICS.slice(0, 5).map(topic => `topic:${topic}`) // Limit topics to avoid query too long
+			'pushed:>' + new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Use pushed instead of created for more recent activity
+			'stars:>5', // Lower minimum stars to find more repositories
 		];
+
+		// Add AI/ML keywords to the search query instead of just topics
+		const aiKeywords = ['ai', 'machine-learning', 'deep-learning', 'neural-network', 'pytorch', 'tensorflow', 'llm', 'gpt', 'openai', 'langchain'];
+		queryParts.push(`(${aiKeywords.join(' OR ')})`);
 
 		if (language) {
 			queryParts.push(`language:${language}`);
@@ -149,7 +152,50 @@ export async function searchTrendingRepos(options?: {
 			error: error instanceof Error ? error.message : String(error) 
 		}, 'Failed to fetch trending GitHub repos');
 		
-		// Return fallback data
+		// Try a simpler search as fallback
+		try {
+			const simpleQuery = 'stars:>100 ai OR machine-learning OR deep-learning OR pytorch OR tensorflow OR llm OR gpt';
+			const response = await apiClient.get('/search/repositories', {
+				params: {
+					q: simpleQuery,
+					sort: 'stars',
+					order: 'desc',
+					per_page: 10
+				}
+			});
+
+			const repos: TrendingRepo[] = response.data.items.map((repo: any) => ({
+				name: repo.name,
+				fullName: repo.full_name,
+				description: repo.description || 'No description available',
+				htmlUrl: repo.html_url,
+				stars: repo.stargazers_count,
+				language: repo.language || 'Unknown',
+				topics: repo.topics || [],
+				createdAt: repo.created_at,
+				updatedAt: repo.updated_at,
+				owner: {
+					login: repo.owner.login,
+					avatarUrl: repo.owner.avatar_url
+				},
+				trendingScore: calculateTrendingScore(repo),
+				weeklyStars: 0
+			}));
+
+			const filteredRepos = repos
+				.filter(repo => isAI_ML_Related(repo))
+				.sort((a, b) => b.trendingScore - a.trendingScore)
+				.slice(0, 10);
+
+			if (filteredRepos.length > 0) {
+				logger.info({ found: filteredRepos.length }, 'Found repos with fallback search');
+				return filteredRepos;
+			}
+		} catch (fallbackError) {
+			logger.warn({ error: fallbackError }, 'Fallback search also failed');
+		}
+		
+		// Return static fallback data as last resort
 		return getFallbackTrendingRepos();
 	}
 }
