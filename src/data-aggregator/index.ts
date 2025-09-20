@@ -72,6 +72,7 @@ export const DEFAULT_FEEDS: string[] = [
 	'https://www.theverge.com/rss/index.xml', // Main feed since AI-specific is 404
 	'https://huggingface.co/blog/feed.xml', // Hugging Face AI blog
 	'https://blog.google/technology/ai/rss/', // Google AI blog
+	'https://www.reddit.com/r/PromptEngineering/.rss', // Reddit r/PromptEngineering
 	// Product Hunt & Future Tools require API integration (no public RSS)
 ];
 

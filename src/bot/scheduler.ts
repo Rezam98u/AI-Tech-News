@@ -145,6 +145,15 @@ export class SchedulerService {
 			
 			// Create enhanced post and send to channel
 			const message = await createEnhancedPost(article);
+			
+			// Skip posting if analysis failed (fallback)
+			if (!message) {
+				logger.warn({ 
+					title: article.title,
+					link: article.link 
+				}, 'Skipping scheduled post due to failed AI analysis');
+				return;
+			}
 			await sendPostWithImage(targetChat, message, article.imageUrl);
 			await markArticlesPosted([article]);
 			counters.postsSent.inc();

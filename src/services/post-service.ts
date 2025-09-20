@@ -5,7 +5,7 @@ import { Telegraf } from 'telegraf';
 import { Article } from '../types';
 import { getPostReadyAnalysis } from '../ai-analysis/optimized';
 import { getTimeAgo } from '../utils/time';
-import { isPersianText, isValuableBusinessImpact, getLabelsForFormat, formatPersianText } from '../utils/persian-utils';
+import { isPersianText, isValuableBusinessImpact, formatPersianText } from '../utils/persian-utils';
 import { calculateHtmlLength, splitIntoThreads, buildHtmlPost, LIMITS } from '../utils/html-utils';
 import { logger } from '../logger';
 
@@ -22,12 +22,23 @@ export class PostService {
 
 	/**
 	 * Create an enhanced post with AI analysis and HTML formatting
+	 * Returns null if analysis is fallback (to prevent posting)
 	 */
-	async createEnhancedPost(article: Article, translateToPersian: boolean = true): Promise<string> {
+	async createEnhancedPost(article: Article, translateToPersian: boolean = true): Promise<string | null> {
 		try {
 			// Use optimized AI analysis with caching
 			logger.info({ title: article.title, translateToPersian }, 'Generating optimized AI analysis for post');
 			const analysis = await getPostReadyAnalysis(article, translateToPersian);
+			
+			// Check if analysis is fallback - skip posting if so
+			if (analysis.isFallback) {
+				logger.warn({ 
+					title: article.title,
+					translateToPersian 
+				}, 'Skipping post due to fallback analysis - AI analysis failed');
+				return null;
+			}
+			
 			logger.info({ 
 				title: article.title, 
 				hasDescription: !!analysis.description,
@@ -97,38 +108,27 @@ export class PostService {
 				err: err instanceof Error ? err.message : String(err), 
 				article: article.title,
 				translateToPersian
-			}, 'Failed to create enhanced post, using fallback');
+			}, 'Failed to create enhanced post - skipping due to error');
 			
-			// Fallback to simple format if AI analysis fails
-			const timeAgo = getTimeAgo(article.pubDate);
-			const isPersian = isPersianText(article.title) || translateToPersian;
-			const labels = getLabelsForFormat(isPersian, 'html');
-			
-			const fallbackTldr = isPersian 
-				? 'آخرین تحول در حوزه هوش مصنوعی و فناوری'
-				: 'Latest development in AI/tech space';
-			
-			const fallbackPost = buildHtmlPost({
-				tldr: fallbackTldr,
-				bullets: [...labels.FALLBACK_BULLETS],
-				description: `${article.title} - ${labels.FALLBACK_DESCRIPTION_SUFFIX}`,
-				hashtags: [...labels.FALLBACK_HASHTAGS],
-				timeAgo,
-				link: article.link,
-				isPersian,
-				maxLength: LIMITS.SINGLE_POST
-			});
-			
-			return fallbackPost;
+			// Don't create fallback post - return null to skip posting
+			return null;
 		}
 	}
 
 	/**
 	 * Create threaded posts for long content
+	 * Returns empty array if analysis is fallback (to prevent posting)
 	 */
 	async createThreadedPost(article: Article, translateToPersian: boolean = true): Promise<string[]> {
 		try {
 			const fullPost = await this.createEnhancedPost(article, translateToPersian);
+			
+			// If createEnhancedPost returned null (fallback analysis), return empty array
+			if (!fullPost) {
+				logger.warn({ title: article.title }, 'Skipping threaded post due to fallback analysis');
+				return [];
+			}
+			
 			const postLength = calculateHtmlLength(fullPost);
 			
 			// If post fits in single message, return as is
@@ -157,10 +157,10 @@ export class PostService {
 			logger.error({ 
 				err: err instanceof Error ? err.message : String(err), 
 				article: article.title 
-			}, 'Failed to create threaded post, returning single post');
+			}, 'Failed to create threaded post - skipping');
 			
-			// Fallback to single post
-			return [await this.createEnhancedPost(article, translateToPersian)];
+			// Don't create fallback - return empty array to skip posting
+			return [];
 		}
 	}
 
@@ -323,7 +323,7 @@ export function getPostService(): PostService {
 /**
  * Convenience functions for backward compatibility
  */
-export async function createEnhancedPost(article: Article, translateToPersian?: boolean): Promise<string> {
+export async function createEnhancedPost(article: Article, translateToPersian?: boolean): Promise<string | null> {
 	return getPostService().createEnhancedPost(article, translateToPersian);
 }
 

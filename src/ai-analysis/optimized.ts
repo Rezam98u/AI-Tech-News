@@ -1,5 +1,5 @@
 import { Article, AnalysisResult } from '../types';
-import { analyzeArticle } from './index';
+import { analyzeArticle, AnalysisResultWithFallback } from './index';
 import { getCachedAnalysis, cacheAnalysis } from '../storage/analysis-cache';
 import { logger } from '../logger';
 
@@ -29,7 +29,7 @@ export async function getOptimizedAnalysis(article: Article, options?: {
 	forceRefresh?: boolean;
 	priority?: 'low' | 'normal' | 'high';
 	translateToPersian?: boolean;
-}): Promise<AnalysisResult> {
+}): Promise<AnalysisResultWithFallback> {
 	const startTime = Date.now();
 	metrics.totalRequests++;
 	
@@ -82,20 +82,22 @@ export async function getOptimizedAnalysis(article: Article, options?: {
 		}, 'analysis: failed, using fallback');
 		
 		// Return fallback analysis based on language
-		const fallback: AnalysisResult = options?.translateToPersian ? {
+		const fallback: AnalysisResultWithFallback = options?.translateToPersian ? {
 			tldr: `آخرین: ${article.title}`,
 			bullets: ['تحول مهم در حوزه هوش مصنوعی/فناوری', 'می‌تواند بر کسب‌وکارها و متخصصان تأثیر بگذارد', 'ارزش پیگیری برای به‌روزرسانی‌ها'],
 			business_implication: 'این تحول ممکن است تأثیراتی بر نحوه فعالیت کسب‌وکارها در بخش هوش مصنوعی/فناوری داشته باشد.',
 			target_audience: 'متخصصان کسب‌وکار، مدیران محصول، و رهبران فناوری',
 			description: `${article.title} - این آخرین تحولات می‌تواند تأثیرات مهمی بر صنعت فناوری و کسب‌وکارها داشته باشد.`,
-			hashtags: ['هوش_مصنوعی', 'اخبار_فناوری', 'نوآوری', 'کسب_وکار', 'فناوری', 'خبر_فوری']
+			hashtags: ['هوش_مصنوعی', 'اخبار_فناوری', 'نوآوری', 'کسب_وکار', 'فناوری', 'خبر_فوری'],
+			isFallback: true
 		} : {
 			tldr: `Latest: ${article.title}`,
 			bullets: ['Important development in AI/tech', 'Could impact businesses and professionals', 'Worth monitoring for updates'],
 			business_implication: 'This development may have implications for how businesses operate in the AI/tech sector.',
 			target_audience: 'Business professionals, product managers, and technology leaders',
 			description: `${article.title} - This latest development could have significant implications for the tech industry and businesses.`,
-			hashtags: ['AI', 'TechNews', 'Innovation', 'Business', 'Technology', 'Breaking']
+			hashtags: ['AI', 'TechNews', 'Innovation', 'Business', 'Technology', 'Breaking'],
+			isFallback: true
 		};
 		
 		// Cache fallback to avoid repeated failures
@@ -154,7 +156,7 @@ export async function getBatchAnalysis(
 /**
  * Smart analysis that only analyzes when needed for posting
  */
-export async function getPostReadyAnalysis(article: Article, translateToPersian: boolean = true): Promise<AnalysisResult> {
+export async function getPostReadyAnalysis(article: Article, translateToPersian: boolean = true): Promise<AnalysisResultWithFallback> {
 	logger.info({ title: article.title, translateToPersian }, 'analysis: preparing article for posting');
 	
 	return await getOptimizedAnalysis(article, { 

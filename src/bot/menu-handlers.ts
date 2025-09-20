@@ -245,7 +245,13 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 			
 			const testArticle = articles[0]!;
 			const message = await createEnhancedPost(testArticle);
-			await sendPostWithImage(ctx.chat.id.toString(), message, testArticle.imageUrl);
+			if (message) {
+				await sendPostWithImage(ctx.chat.id.toString(), message, testArticle.imageUrl);
+			} else {
+				await ctx.reply('❌ <b>Test Post Failed</b>\n\nUnable to analyze the test article. This may indicate an AI analysis issue.', {
+					reply_markup: createMainMenu().reply_markup
+				});
+			}
 		} catch (err) {
 			await ctx.reply('Failed to create test post.');
 		}
@@ -264,9 +270,15 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 			
 			const message = await createEnhancedPost(testPersianArticle);
 			
-			await ctx.reply(message, {
-				reply_markup: createMainMenu().reply_markup
-			});
+			if (message) {
+				await ctx.reply(message, {
+					reply_markup: createMainMenu().reply_markup
+				});
+			} else {
+				await ctx.reply('❌ <b>Persian Test Failed</b>\n\nUnable to analyze the Persian test article. This may indicate an AI analysis issue.', {
+					reply_markup: createMainMenu().reply_markup
+				});
+			}
 			
 			await ctx.reply('✅ **Persian Test Complete!**\n\nThis demonstrates how the bot analyzes and formats Persian content with appropriate language detection and business impact evaluation.', {
 				reply_markup: createMainMenu().reply_markup
@@ -292,9 +304,15 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 			
 			const message = await createEnhancedPost(testEnglishArticle, true); // Explicitly request Persian translation
 			
-			await ctx.reply(message, {
-				reply_markup: createMainMenu().reply_markup
-			});
+			if (message) {
+				await ctx.reply(message, {
+					reply_markup: createMainMenu().reply_markup
+				});
+			} else {
+				await ctx.reply('❌ <b>Translation Test Failed</b>\n\nUnable to analyze and translate the test article. This may indicate an AI analysis issue.', {
+					reply_markup: createMainMenu().reply_markup
+				});
+			}
 			
 			await ctx.reply('✅ **Translation Test Complete!**\n\nThis demonstrates how the bot translates English content to Persian with full AI analysis, business impact evaluation, and proper formatting.', {
 				reply_markup: createMainMenu().reply_markup
@@ -320,9 +338,15 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 			
 			const message = await createEnhancedPost(testEnglishArticle, false); // Request English analysis
 			
-			await ctx.reply(message, {
-				reply_markup: createMainMenu().reply_markup
-			});
+			if (message) {
+				await ctx.reply(message, {
+					reply_markup: createMainMenu().reply_markup
+				});
+			} else {
+				await ctx.reply('❌ <b>English Test Failed</b>\n\nUnable to analyze the English test article. This may indicate an AI analysis issue.', {
+					reply_markup: createMainMenu().reply_markup
+				});
+			}
 			
 			await ctx.reply('✅ **English Test Complete!**\n\nThis demonstrates how the bot analyzes and formats content in English when specifically requested.', {
 				reply_markup: createMainMenu().reply_markup

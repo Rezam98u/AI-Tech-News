@@ -13,7 +13,7 @@ import { toggleAutoPosting, getSchedulerStatus } from './scheduler';
 /**
  * Post creation and sending functions (will be moved to post service later)
  */
-declare function createEnhancedPost(article: any, translateToPersian?: boolean): Promise<string>;
+declare function createEnhancedPost(article: any, translateToPersian?: boolean): Promise<string | null>;
 declare function sendPostWithImage(chatId: string, message: string, imageUrl?: string): Promise<void>;
 declare function shortenLink(url: string, maxLength?: number): string;
 
@@ -37,7 +37,8 @@ export function registerCommands(bot: Telegraf) {
 				report += `• <code>venturebeat</code> - VentureBeat AI\n`;
 				report += `• <code>theverge</code> - The Verge\n`;
 				report += `• <code>huggingface</code> - Hugging Face Blog\n`;
-				report += `• <code>google</code> - Google AI Blog\n\n`;
+				report += `• <code>google</code> - Google AI Blog\n`;
+				report += `• <code>reddit</code> - Reddit r/PromptEngineering\n\n`;
 				report += `Example: <code>/fetchfeed huggingface</code>`;
 				
 				await ctx.reply(report, {
@@ -56,7 +57,8 @@ export function registerCommands(bot: Telegraf) {
 				'venturebeat': 'https://venturebeat.com/category/ai/feed/',
 				'theverge': 'https://www.theverge.com/rss/index.xml',
 				'huggingface': 'https://huggingface.co/blog/feed.xml',
-				'google': 'https://blog.google/technology/ai/rss/'
+				'google': 'https://blog.google/technology/ai/rss/',
+				'reddit': 'https://www.reddit.com/r/PromptEngineering/.rss'
 			};
 			
 			const feedUrl = feedMap[source];
@@ -95,7 +97,14 @@ export function registerCommands(bot: Telegraf) {
 			
 			// Create and send the enhanced post
 			const message = await createEnhancedPost(latestArticle);
-			await sendPostWithImage(ctx.chat!.id.toString(), message, latestArticle.imageUrl);
+			if (message) {
+				await sendPostWithImage(ctx.chat!.id.toString(), message, latestArticle.imageUrl);
+			} else {
+				await ctx.reply('❌ <b>Analysis Failed</b>\n\nUnable to analyze this article. Skipping post.', {
+					parse_mode: 'HTML',
+					reply_markup: createMainMenu().reply_markup
+				});
+			}
 			
 			logger.info({ 
 				source, 
@@ -182,7 +191,14 @@ export function registerCommands(bot: Telegraf) {
 			
 			const testArticle = articles[0]!;
 			const message = await createEnhancedPost(testArticle);
-			await sendPostWithImage(ctx.chat.id.toString(), message, testArticle.imageUrl);
+			if (message) {
+				await sendPostWithImage(ctx.chat.id.toString(), message, testArticle.imageUrl);
+			} else {
+				await ctx.reply('❌ <b>Test Post Failed</b>\n\nUnable to analyze the test article. This may indicate an AI analysis issue.', {
+					parse_mode: 'HTML',
+					reply_markup: createMainMenu().reply_markup
+				});
+			}
 			
 			logger.info({ title: testArticle.title }, 'test post created successfully');
 		} catch (err) {
@@ -208,9 +224,15 @@ export function registerCommands(bot: Telegraf) {
 			
 			const message = await createEnhancedPost(testPersianArticle);
 			
-			await ctx.reply(message, {
-				reply_markup: createMainMenu().reply_markup
-			});
+			if (message) {
+				await ctx.reply(message, {
+					reply_markup: createMainMenu().reply_markup
+				});
+			} else {
+				await ctx.reply('❌ <b>Persian Test Failed</b>\n\nUnable to analyze the Persian test article. This may indicate an AI analysis issue.', {
+					reply_markup: createMainMenu().reply_markup
+				});
+			}
 			
 			await ctx.reply('✅ **Persian Test Complete!**\n\nThis demonstrates how the bot analyzes and formats Persian content with appropriate language detection and business impact evaluation.', {
 				reply_markup: createMainMenu().reply_markup
@@ -239,9 +261,15 @@ export function registerCommands(bot: Telegraf) {
 			
 			const message = await createEnhancedPost(testEnglishArticle, true); // Explicitly request Persian translation
 			
-			await ctx.reply(message, {
-				reply_markup: createMainMenu().reply_markup
-			});
+			if (message) {
+				await ctx.reply(message, {
+					reply_markup: createMainMenu().reply_markup
+				});
+			} else {
+				await ctx.reply('❌ <b>Translation Test Failed</b>\n\nUnable to analyze and translate the test article. This may indicate an AI analysis issue.', {
+					reply_markup: createMainMenu().reply_markup
+				});
+			}
 			
 			await ctx.reply('✅ **Translation Test Complete!**\n\nThis demonstrates how the bot translates English content to Persian with full AI analysis, business impact evaluation, and proper formatting.', {
 				reply_markup: createMainMenu().reply_markup
@@ -270,9 +298,15 @@ export function registerCommands(bot: Telegraf) {
 			
 			const message = await createEnhancedPost(testEnglishArticle, false); // Request English analysis
 			
-			await ctx.reply(message, {
-				reply_markup: createMainMenu().reply_markup
-			});
+			if (message) {
+				await ctx.reply(message, {
+					reply_markup: createMainMenu().reply_markup
+				});
+			} else {
+				await ctx.reply('❌ <b>English Test Failed</b>\n\nUnable to analyze the English test article. This may indicate an AI analysis issue.', {
+					reply_markup: createMainMenu().reply_markup
+				});
+			}
 			
 			await ctx.reply('✅ **English Test Complete!**\n\nThis demonstrates how the bot analyzes and formats content in English when specifically requested.', {
 				reply_markup: createMainMenu().reply_markup

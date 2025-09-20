@@ -2,6 +2,11 @@ import { Article, AnalysisResult } from '../types';
 import { AIProviderFactory, detectAIProvider, buildEnhancedPrompt } from './providers';
 import { logger } from '../logger';
 
+// Extended result type to include fallback flag
+export interface AnalysisResultWithFallback extends AnalysisResult {
+	isFallback?: boolean;
+}
+
 function coerceResult(obj: any): AnalysisResult {
 	return {
 		tldr: String(obj?.tldr ?? '').trim(),
@@ -13,7 +18,7 @@ function coerceResult(obj: any): AnalysisResult {
 	};
 }
 
-export async function analyzeArticle(article: Article, translateToPersian: boolean = true): Promise<AnalysisResult> {
+export async function analyzeArticle(article: Article, translateToPersian: boolean = true): Promise<AnalysisResultWithFallback> {
 	try {
 		// Detect and configure AI provider
 		const config = detectAIProvider();
@@ -32,7 +37,7 @@ export async function analyzeArticle(article: Article, translateToPersian: boole
 			translateToPersian
 		}, 'AI analysis completed successfully');
 		
-		return coerceResult(parsed);
+		return { ...coerceResult(parsed), isFallback: false };
 		
 	} catch (err) {
 		logger.error({ err: err instanceof Error ? err.message : String(err), translateToPersian }, 'AI analysis failed');
@@ -45,7 +50,8 @@ export async function analyzeArticle(article: Article, translateToPersian: boole
 				business_implication: '', // No business implication for fallback
 				target_audience: 'متخصصان کسب‌وکار، مدیران محصول، و رهبران فناوری',
 				description: `${article.title} - این آخرین تحولات می‌تواند تأثیرات مهمی بر صنعت فناوری و کسب‌وکارها داشته باشد.`,
-				hashtags: ['هوش_مصنوعی', 'اخبار_فناوری', 'نوآوری', 'کسب_وکار', 'فناوری', 'به_روزرسانی']
+				hashtags: ['هوش_مصنوعی', 'اخبار_فناوری', 'نوآوری', 'کسب_وکار', 'فناوری', 'به_روزرسانی'],
+				isFallback: true
 			};
 		} else {
 			return {
@@ -54,7 +60,8 @@ export async function analyzeArticle(article: Article, translateToPersian: boole
 				business_implication: '', // No business implication for fallback
 				target_audience: 'Business professionals, product managers, and tech leaders',
 				description: `${article.title} - This latest development in the AI/tech space could have significant implications for businesses and professionals.`,
-				hashtags: ['AI', 'TechNews', 'Innovation', 'Business', 'Technology', 'Update']
+				hashtags: ['AI', 'TechNews', 'Innovation', 'Business', 'Technology', 'Update'],
+				isFallback: true
 			};
 		}
 	}

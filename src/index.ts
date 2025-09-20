@@ -104,7 +104,13 @@ async function startBot(): Promise<void> {
 					await ctx.reply(headerMessage, { parse_mode: 'HTML' });
 					
 					const message = await createEnhancedPost(latestArticle);
-					await sendPostWithImage(ctx.chat.id.toString(), message, latestArticle.imageUrl);
+					if (message) {
+						await sendPostWithImage(ctx.chat.id.toString(), message, latestArticle.imageUrl);
+					} else {
+						await ctx.reply('❌ <b>Analysis Failed</b>\n\nUnable to analyze the latest article. This may indicate an AI analysis issue.', {
+							parse_mode: 'HTML'
+						});
+					}
 				} else {
 					await ctx.reply('📰 <b>No recent articles have been fetched yet.</b>', { 
 						parse_mode: 'HTML',
