@@ -100,6 +100,12 @@ export class SchedulerService {
 	 */
 	private async processArticles(): Promise<void> {
 		try {
+			// Clean up old pending posts periodically
+			const cleanedCount = this.cleanupOldPendingPosts();
+			if (cleanedCount > 0) {
+				logger.info({ cleanedCount }, 'Cleaned up expired pending posts');
+			}
+
 			// Check if automatic posting is enabled
 			if (!this.isAutoPostingEnabled()) {
 				logger.debug('scheduler: automatic posting is disabled');
@@ -330,18 +336,43 @@ export class SchedulerService {
 				timestamp: Date.now()
 			});
 
-			// Create preview header
-			const previewHeader = `📋 <b>POST PREVIEW - Awaiting Confirmation</b>\n\n` +
-				`📰 Source: ${article.link.includes('reddit.com') ? 'Reddit' : 'News'}\n` +
-				`⏰ Published: ${article.pubDate}\n` +
-				`━━━━━━━━━━━━━━━━━━━━\n\n`;
+			// Get enhanced metadata
+			const { getSourceDomain, getTimeAgo } = await import('../utils/time');
+			const sourceDomain = getSourceDomain(article.link);
+			const timeAgo = getTimeAgo(article.pubDate);
+			const targetCategory = (process.env.TARGET_CATEGORY as ContentCategory) || 'AI Tool';
+			
+			// Determine category emoji
+			const categoryEmoji = {
+				'AI Tool': '🛠️',
+				'Tech News': '📰',
+				'Business Use-Case': '💼',
+				'Job Opportunity': '🔍',
+				'Sponsored Deal': '💰',
+				'Developer Prompts': '💻'
+			}[targetCategory] || '📋';
+
+			// Create enhanced preview header with better visual hierarchy
+			const previewHeader = 
+				`┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+				`┃ 👁️ <b>POST PREVIEW</b> - Review Required\n` +
+				`┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+				`${categoryEmoji} <b>Category:</b> ${targetCategory}\n` +
+				`🌐 <b>Source:</b> ${sourceDomain}\n` +
+				`⏰ <b>Published:</b> ${timeAgo}\n` +
+				`📊 <b>Pending Posts:</b> ${pendingPosts.size}\n` +
+				`━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
 			const fullPreview = previewHeader + message;
+			
+			// Calculate message length for better handling
+			const previewLength = fullPreview.length;
+			const captionLimit = 1024;
 
-			// Create inline keyboard with action buttons
+			// Create enhanced inline keyboard with better organization
 			const keyboard = Markup.inlineKeyboard([
 				[
-					Markup.button.callback('✅ Send to Channel', `confirm_${postId}`),
+					Markup.button.callback('✅ Send Now', `confirm_${postId}`),
 					Markup.button.callback('⏭️ Skip', `skip_${postId}`)
 				],
 				[
@@ -349,42 +380,92 @@ export class SchedulerService {
 					Markup.button.callback('❌ Cancel', `cancel_${postId}`)
 				],
 				[
-					Markup.button.callback('📝 View Full Article', `view_${postId}`)
+					Markup.button.callback('📝 View Original', `view_${postId}`),
+					Markup.button.callback('📋 Preview List', `list_previews`)
 				]
 			]);
 
-			// Send preview with image if available
+			// Send preview with intelligent handling of image and text
 			if (article.imageUrl) {
 				try {
-					await this.bot.telegram.sendPhoto(adminChatId, article.imageUrl, {
-						caption: fullPreview.substring(0, 1024), // Telegram caption limit
-						parse_mode: 'HTML',
-						...keyboard
-					});
+					if (previewLength <= captionLimit) {
+						// If preview fits in caption, send as single message
+						await this.bot.telegram.sendPhoto(adminChatId, article.imageUrl, {
+							caption: fullPreview,
+							parse_mode: 'HTML',
+							...keyboard
+						});
+					} else {
+						// If preview is too long, send image with short caption first
+						const shortCaption = 
+							`┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+							`┃ 👁️ <b>POST PREVIEW</b> - Review Required\n` +
+							`┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+							`${categoryEmoji} ${targetCategory} • 🌐 ${sourceDomain}\n` +
+							`⏰ ${timeAgo} • 📊 ${pendingPosts.size} pending`;
+
+						await this.bot.telegram.sendPhoto(adminChatId, article.imageUrl, {
+							caption: shortCaption,
+							parse_mode: 'HTML'
+						});
+
+						// Then send full preview with buttons
+						await this.bot.telegram.sendMessage(adminChatId, fullPreview, {
+							parse_mode: 'HTML',
+							link_preview_options: { is_disabled: true },
+							...keyboard
+						});
+					}
+					
+					logger.info({ 
+						postId, 
+						title: article.title,
+						adminChatId,
+						previewLength,
+						hasImage: true,
+						splitMessage: previewLength > captionLimit
+					}, 'Preview sent to admin with image');
+					
 				} catch (err) {
 					// Fallback to text if image fails
+					logger.warn({ err, imageUrl: article.imageUrl }, 'Failed to send preview with image, falling back to text');
+					
 					await this.bot.telegram.sendMessage(adminChatId, fullPreview, {
 						parse_mode: 'HTML',
 						link_preview_options: { is_disabled: true },
 						...keyboard
 					});
+					
+					logger.info({ 
+						postId, 
+						title: article.title,
+						adminChatId,
+						hasImage: false
+					}, 'Preview sent to admin (text fallback)');
 				}
 			} else {
+				// No image, send text only
 				await this.bot.telegram.sendMessage(adminChatId, fullPreview, {
 					parse_mode: 'HTML',
 					link_preview_options: { is_disabled: true },
 					...keyboard
 				});
+				
+				logger.info({ 
+					postId, 
+					title: article.title,
+					adminChatId,
+					previewLength,
+					hasImage: false
+				}, 'Preview sent to admin for confirmation');
 			}
 
-			logger.info({ 
-				postId, 
-				title: article.title,
-				adminChatId 
-			}, 'Preview sent to admin for confirmation');
-
 		} catch (err) {
-			logger.error({ err }, 'Failed to send preview');
+			logger.error({ 
+				err, 
+				articleTitle: article.title,
+				articleLink: article.link
+			}, 'Failed to send preview');
 		}
 	}
 
@@ -395,16 +476,19 @@ export class SchedulerService {
 		const pending = pendingPosts.get(postId);
 		
 		if (!pending) {
-			return '❌ Post not found or expired. It may have already been processed.';
+			logger.warn({ postId }, 'Attempted to confirm non-existent post');
+			return '❌ <b>Post Not Found</b>\n\nThis preview has expired or was already processed. Please check <code>/previews</code> for current pending posts.';
 		}
 
 		try {
 			const targetChat = process.env.TELEGRAM_TARGET_CHAT_ID;
 			if (!targetChat) {
-				return '❌ Target channel not configured';
+				logger.error('Target chat not configured');
+				return '❌ <b>Configuration Error</b>\n\nTarget channel not configured. Please set TELEGRAM_TARGET_CHAT_ID in environment variables.';
 			}
 
 			// Send to channel
+			logger.info({ postId, title: pending.article.title }, 'Sending confirmed post to channel');
 			await sendPostWithImage(targetChat, pending.message, pending.article.imageUrl);
 			await markArticlesPosted([pending.article]);
 			counters.postsSent.inc();
@@ -414,14 +498,19 @@ export class SchedulerService {
 
 			logger.info({ 
 				postId, 
-				title: pending.article.title 
-			}, 'Post confirmed and sent to channel');
+				title: pending.article.title,
+				targetChat
+			}, 'Post confirmed and sent to channel successfully');
 
-			return '✅ Post sent to channel successfully!';
+			const { getSourceDomain } = await import('../utils/time');
+			const sourceDomain = getSourceDomain(pending.article.link);
+
+			return `✅ <b>Post Sent Successfully!</b>\n\n📰 ${pending.article.title.substring(0, 60)}${pending.article.title.length > 60 ? '...' : ''}\n🌐 Source: ${sourceDomain}\n📢 Sent to channel`;
 
 		} catch (err) {
-			logger.error({ err, postId }, 'Failed to send confirmed post');
-			return `❌ Failed to send post: ${err instanceof Error ? err.message : String(err)}`;
+			const errorMsg = err instanceof Error ? err.message : String(err);
+			logger.error({ err, postId, title: pending.article.title }, 'Failed to send confirmed post');
+			return `❌ <b>Failed to Send Post</b>\n\n<b>Error:</b> ${errorMsg}\n\n<i>The post remains in the preview queue. You can try again or skip it.</i>`;
 		}
 	}
 
@@ -432,15 +521,25 @@ export class SchedulerService {
 		const pending = pendingPosts.get(postId);
 		
 		if (!pending) {
-			return '❌ Post not found or expired';
+			logger.warn({ postId }, 'Attempted to skip non-existent post');
+			return '❌ <b>Post Not Found</b>\n\nThis preview has expired or was already processed.';
 		}
 
-		// Mark as posted to skip it
-		await markArticlesPosted([pending.article]);
-		pendingPosts.delete(postId);
+		try {
+			// Mark as posted to skip it
+			await markArticlesPosted([pending.article]);
+			pendingPosts.delete(postId);
 
-		logger.info({ postId, title: pending.article.title }, 'Post skipped by admin');
-		return '⏭️ Post skipped. It will not be shown again.';
+			logger.info({ postId, title: pending.article.title }, 'Post skipped by admin');
+			
+			const { getSourceDomain } = await import('../utils/time');
+			const sourceDomain = getSourceDomain(pending.article.link);
+			
+			return `⏭️ <b>Post Skipped</b>\n\n📰 ${pending.article.title.substring(0, 60)}${pending.article.title.length > 60 ? '...' : ''}\n🌐 Source: ${sourceDomain}\n\n<i>This article will not be shown again.</i>`;
+		} catch (err) {
+			logger.error({ err, postId }, 'Failed to skip post');
+			return '❌ <b>Failed to Skip Post</b>\n\nAn error occurred. Please try again.';
+		}
 	}
 
 	/**
@@ -450,15 +549,19 @@ export class SchedulerService {
 		const pending = pendingPosts.get(postId);
 		
 		if (!pending) {
-			return '❌ Post not found or expired';
+			logger.warn({ postId }, 'Attempted to regenerate non-existent post');
+			return '❌ <b>Post Not Found</b>\n\nThis preview has expired or was already processed.';
 		}
 
 		try {
+			logger.info({ postId, title: pending.article.title }, 'Regenerating post');
+			
 			// Regenerate the post
 			const newMessage = await createEnhancedPost(pending.article);
 			
 			if (!newMessage) {
-				return '❌ Failed to regenerate post - AI analysis failed';
+				logger.warn({ postId, title: pending.article.title }, 'AI analysis failed during regeneration');
+				return '❌ <b>Regeneration Failed</b>\n\nAI analysis failed. This may indicate:\n• Article content is not suitable\n• AI provider is experiencing issues\n\n<i>Try skipping this post or wait a moment and try again.</i>';
 			}
 
 			// Update stored message
@@ -470,12 +573,13 @@ export class SchedulerService {
 			const targetChat = process.env.TELEGRAM_TARGET_CHAT_ID || '';
 			await this.sendPreview(pending.article, newMessage, targetChat);
 
-			logger.info({ postId, title: pending.article.title }, 'Post regenerated');
-			return '🔄 Post regenerated! Check the new preview above.';
+			logger.info({ postId, title: pending.article.title }, 'Post regenerated successfully');
+			return '🔄 <b>Post Regenerated!</b>\n\nCheck the new preview above with updated AI analysis.';
 
 		} catch (err) {
-			logger.error({ err, postId }, 'Failed to regenerate post');
-			return `❌ Failed to regenerate: ${err instanceof Error ? err.message : String(err)}`;
+			const errorMsg = err instanceof Error ? err.message : String(err);
+			logger.error({ err, postId, title: pending.article.title }, 'Failed to regenerate post');
+			return `❌ <b>Regeneration Failed</b>\n\n<b>Error:</b> ${errorMsg}\n\n<i>You can try again or skip this post.</i>`;
 		}
 	}
 
@@ -486,12 +590,23 @@ export class SchedulerService {
 		const pending = pendingPosts.get(postId);
 		
 		if (!pending) {
-			return '❌ Post not found or expired';
+			logger.warn({ postId }, 'Attempted to cancel non-existent post');
+			return '❌ <b>Post Not Found</b>\n\nThis preview has expired or was already processed.';
 		}
 
-		pendingPosts.delete(postId);
-		logger.info({ postId, title: pending.article.title }, 'Post canceled by admin');
-		return '❌ Post canceled. Article remains in queue.';
+		try {
+			const { getSourceDomain } = await import('../utils/time');
+			const sourceDomain = getSourceDomain(pending.article.link);
+			
+			pendingPosts.delete(postId);
+			logger.info({ postId, title: pending.article.title }, 'Post canceled by admin');
+			
+			return `❌ <b>Post Canceled</b>\n\n📰 ${pending.article.title.substring(0, 60)}${pending.article.title.length > 60 ? '...' : ''}\n🌐 Source: ${sourceDomain}\n\n<i>The article will remain available for future posting.</i>`;
+		} catch (err) {
+			logger.error({ err, postId }, 'Failed to cancel post');
+			pendingPosts.delete(postId); // Still delete it
+			return '❌ <b>Post Removed</b>\n\nPreview has been removed from the queue.';
+		}
 	}
 
 	/**
@@ -505,13 +620,77 @@ export class SchedulerService {
 		}
 
 		const article = pending.article;
-		let details = `📰 <b>Full Article Details</b>\n\n`;
-		details += `<b>Title:</b> ${article.title}\n\n`;
-		details += `<b>Link:</b> ${article.link}\n\n`;
-		details += `<b>Published:</b> ${article.pubDate}\n\n`;
-		details += `<b>Content Snippet:</b>\n${article.contentSnippet.substring(0, 500)}${article.contentSnippet.length > 500 ? '...' : ''}`;
+		const { getSourceDomain, getTimeAgo } = await import('../utils/time');
+		const sourceDomain = getSourceDomain(article.link);
+		const timeAgo = getTimeAgo(article.pubDate);
+		
+		let details = `📰 <b>Original Article Details</b>\n\n`;
+		details += `┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+		details += `<b>📌 Title:</b>\n${article.title}\n\n`;
+		details += `<b>🌐 Source:</b> ${sourceDomain}\n`;
+		details += `<b>⏰ Published:</b> ${timeAgo}\n`;
+		details += `<b>🔗 Link:</b>\n${article.link}\n`;
+		details += `┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+		details += `<b>📝 Content Snippet:</b>\n${article.contentSnippet.substring(0, 500)}${article.contentSnippet.length > 500 ? '...' : ''}`;
 
 		return details;
+	}
+
+	/**
+	 * List all pending previews
+	 */
+	async listPendingPosts(): Promise<string> {
+		if (pendingPosts.size === 0) {
+			return '✅ <b>No Pending Previews</b>\n\nAll posts have been reviewed. Waiting for new articles...';
+		}
+
+		const { getTimeAgo } = await import('../utils/time');
+		let list = `📋 <b>Pending Post Previews</b> (${pendingPosts.size})\n\n`;
+		
+		let index = 1;
+		for (const [, pending] of pendingPosts.entries()) {
+			const { getSourceDomain } = await import('../utils/time');
+			const sourceDomain = getSourceDomain(pending.article.link);
+			const timeAgo = getTimeAgo(pending.article.pubDate);
+			const waitTime = Math.floor((Date.now() - pending.timestamp) / 1000 / 60); // minutes
+			
+			list += `${index}. <b>${pending.article.title.substring(0, 50)}${pending.article.title.length > 50 ? '...' : ''}</b>\n`;
+			list += `   🌐 ${sourceDomain} • ⏰ ${timeAgo}\n`;
+			list += `   ⏳ Pending for ${waitTime}m\n\n`;
+			
+			index++;
+			if (index > 10) {
+				list += `... and ${pendingPosts.size - 10} more\n`;
+				break;
+			}
+		}
+		
+		list += `\n💡 <i>Tip: Review each preview and click "Send Now" or "Skip"</i>`;
+		
+		return list;
+	}
+
+	/**
+	 * Clean up old pending posts (older than 24 hours)
+	 */
+	cleanupOldPendingPosts(): number {
+		const maxAge = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+		const now = Date.now();
+		let cleanedCount = 0;
+
+		for (const [id, pending] of pendingPosts.entries()) {
+			if (now - pending.timestamp > maxAge) {
+				pendingPosts.delete(id);
+				cleanedCount++;
+				logger.info({ 
+					postId: id, 
+					title: pending.article.title,
+					age: Math.floor((now - pending.timestamp) / 1000 / 60 / 60) 
+				}, 'Cleaned up expired pending post');
+			}
+		}
+
+		return cleanedCount;
 	}
 
 	/**
@@ -654,4 +833,18 @@ export function cancelPost(postId: string): Promise<string> {
  */
 export function viewArticle(postId: string): Promise<string> {
 	return schedulerService.viewArticle(postId);
+}
+
+/**
+ * List all pending posts
+ */
+export function listPendingPosts(): Promise<string> {
+	return schedulerService.listPendingPosts();
+}
+
+/**
+ * Clean up old pending posts
+ */
+export function cleanupOldPendingPosts(): number {
+	return schedulerService.cleanupOldPendingPosts();
 }

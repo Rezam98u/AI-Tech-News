@@ -686,4 +686,131 @@ export function registerCommands(bot: Telegraf) {
 			});
 		}
 	});
+
+	bot.command('previews', async (ctx) => {
+		counters.commandsHandled.inc({ command: 'previews' });
+		try {
+			const { listPendingPosts } = await import('./scheduler');
+			const result = await listPendingPosts();
+			await ctx.reply(result, {
+				parse_mode: 'HTML',
+				reply_markup: createMainMenu().reply_markup
+			});
+		} catch (err) {
+			await ctx.reply('Failed to list pending previews.', {
+				reply_markup: createMainMenu().reply_markup
+			});
+		}
+	});
+
+	bot.command('clearpreviews', async (ctx) => {
+		counters.commandsHandled.inc({ command: 'clearpreviews' });
+		try {
+			const { cleanupOldPendingPosts } = await import('./scheduler');
+			const cleanedCount = cleanupOldPendingPosts();
+			
+			if (cleanedCount > 0) {
+				await ctx.reply(`🧹 <b>Cleaned Up ${cleanedCount} Expired Preview${cleanedCount > 1 ? 's' : ''}</b>\n\nExpired previews (older than 24 hours) have been removed.`, {
+					parse_mode: 'HTML',
+					reply_markup: createMainMenu().reply_markup
+				});
+			} else {
+				await ctx.reply('✅ <b>No Expired Previews Found</b>\n\nAll pending previews are recent.', {
+					parse_mode: 'HTML',
+					reply_markup: createMainMenu().reply_markup
+				});
+			}
+		} catch (err) {
+			await ctx.reply('Failed to clean up previews.', {
+				reply_markup: createMainMenu().reply_markup
+			});
+		}
+	});
+
+	bot.command('clearchat', async (ctx) => {
+		counters.commandsHandled.inc({ command: 'clearchat' });
+		try {
+			const chatId = ctx.chat.id;
+			
+			await ctx.reply('🗑️ <b>Clearing Chat History...</b>\n\nThis will delete all messages in this chat. Please wait...', {
+				parse_mode: 'HTML'
+			});
+
+			let deletedCount = 0;
+			let checkedCount = 0;
+			let currentMessageId = ctx.message.message_id;
+			let consecutiveNotFound = 0;
+			const maxConsecutiveNotFound = 50;
+			
+			logger.info({ chatId }, 'Starting chat history cleanup');
+
+			// Work backwards from current message
+			while (currentMessageId > 0 && consecutiveNotFound < maxConsecutiveNotFound) {
+				checkedCount++;
+				
+				try {
+					await ctx.telegram.deleteMessage(chatId, currentMessageId);
+					deletedCount++;
+					consecutiveNotFound = 0;
+					
+					// Log progress every 10 deletions
+					if (deletedCount % 10 === 0) {
+						logger.info({ deletedCount, currentMessageId }, 'Chat cleanup progress');
+					}
+					
+					// Rate limiting - small delay
+					if (deletedCount % 5 === 0) {
+						await new Promise(resolve => setTimeout(resolve, 200));
+					}
+					
+				} catch (err) {
+					const errorMsg = err instanceof Error ? err.message : String(err);
+					
+					if (errorMsg.includes('message to delete not found') || 
+						errorMsg.includes('Bad Request: message can\'t be deleted') ||
+						errorMsg.includes('MESSAGE_ID_INVALID')) {
+						consecutiveNotFound++;
+					} else if (errorMsg.includes('Too Many Requests')) {
+						// Rate limited - wait longer
+						logger.warn({ currentMessageId, errorMsg }, 'Rate limited, waiting...');
+						await new Promise(resolve => setTimeout(resolve, 3000));
+						continue; // Retry this message ID
+					} else {
+						logger.warn({ currentMessageId, errorMsg }, 'Unexpected error during deletion');
+					}
+				}
+				
+				// Small delay between attempts
+				await new Promise(resolve => setTimeout(resolve, 100));
+				
+				// Move to previous message
+				currentMessageId--;
+			}
+
+			const finalReport = `🗑️ <b>Chat Cleared!</b>\n\n` +
+				`✅ <b>Deleted:</b> ${deletedCount} messages\n` +
+				`📊 <b>Checked:</b> ${checkedCount} message IDs\n\n` +
+				`${deletedCount > 0 ? '🎉 Chat history cleaned successfully!' : 'ℹ️ No messages found to delete.'}`;
+
+			await ctx.reply(finalReport, {
+				parse_mode: 'HTML',
+				reply_markup: createMainMenu().reply_markup
+			});
+
+			logger.info({ 
+				deletedCount, 
+				checkedCount,
+				chatId 
+			}, 'Chat cleanup completed');
+
+		} catch (err) {
+			const errorMsg = err instanceof Error ? err.message : String(err);
+			await ctx.reply(`❌ <b>Chat cleanup failed:</b> ${errorMsg}`, {
+				parse_mode: 'HTML',
+				reply_markup: createMainMenu().reply_markup
+			});
+			
+			logger.error({ err }, 'Chat cleanup failed');
+		}
+	});
 }

@@ -791,22 +791,27 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 			const autoPostingStatus = status.autoPostingEnabled ? '✅ Enabled' : '⏸️ Disabled';
 			const schedulerStatus = status.isRunning ? '🟢 Running' : '🔴 Stopped';
 			const processingStatus = status.isSchedulerRunning ? '⏳ Processing' : '💤 Idle';
+			const previewModeStatus = status.previewMode ? '👁️ Enabled (Review first)' : '🚀 Disabled (Direct post)';
 			
-			let report = `📊 **Scheduler Status Report**\n\n`;
-			report += `🤖 **Automatic Posting:** ${autoPostingStatus}\n`;
-			report += `⚙️ **Scheduler:** ${schedulerStatus}\n`;
-			report += `🔄 **Current State:** ${processingStatus}\n\n`;
+			let report = `📊 <b>Scheduler Status Report</b>\n\n`;
+			report += `🤖 <b>Automatic Posting:</b> ${autoPostingStatus}\n`;
+			report += `👁️ <b>Preview Mode:</b> ${previewModeStatus}\n`;
+			report += `⚙️ <b>Scheduler:</b> ${schedulerStatus}\n`;
+			report += `🔄 <b>Current State:</b> ${processingStatus}\n`;
+			report += `📋 <b>Pending Previews:</b> ${status.pendingPosts}\n\n`;
 			
-			report += `⚙️ **Configuration:**\n`;
+			report += `⚙️ <b>Configuration:</b>\n`;
 			report += `• Target Category: ${status.configuration.targetCategory}\n`;
 			report += `• Target Channel: ${status.configuration.targetChannel || 'Not configured'}\n`;
+			report += `• Admin Chat: ${status.configuration.adminChatId || 'Same as target'}\n`;
 			report += `• Cron Pattern: ${status.configuration.cronPattern}\n\n`;
 			
-			report += `🎮 **Available Commands:**\n`;
-			report += `• \`/toggleposting\` - Toggle automatic posting\n`;
-			report += `• \`/postingstatus\` - Show this status\n\n`;
-			report += `ℹ️ **Note:** Automatic posting is disabled by default for safety.\n`;
-			report += `Use \`/toggleposting\` to enable when ready.`;
+			report += `🎮 <b>Commands:</b>\n`;
+			report += `• <code>/toggleposting</code> - Toggle automatic posting\n`;
+			report += `• <code>/togglepreview</code> - Toggle preview mode\n`;
+			report += `• <code>/previews</code> - List pending previews\n`;
+			report += `• <code>/postingstatus</code> - Show this status\n\n`;
+			report += `ℹ️ <b>Note:</b> Preview mode shows posts for approval before sending to channel.`;
 			
 			await ctx.reply(report, {
 				parse_mode: 'HTML',
@@ -817,5 +822,74 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 				reply_markup: createPostingControlMenu().reply_markup
 			});
 		}
+	});
+
+	bot.hears('📋 List Previews', async (ctx) => {
+		try {
+			const { listPendingPosts } = await import('./scheduler');
+			const result = await listPendingPosts();
+			await ctx.reply(result, {
+				parse_mode: 'HTML',
+				reply_markup: createPostingControlMenu().reply_markup
+			});
+		} catch (err) {
+			await ctx.reply('Failed to list pending previews.', {
+				reply_markup: createPostingControlMenu().reply_markup
+			});
+		}
+	});
+
+	bot.hears('👁️ Toggle Preview Mode', async (ctx) => {
+		try {
+			const { isPreviewMode, setPreviewMode } = await import('./scheduler');
+			const currentMode = isPreviewMode();
+			setPreviewMode(!currentMode);
+			const newMode = !currentMode;
+			
+			const status = newMode ? 'Enabled' : 'Disabled';
+			const emoji = newMode ? '👁️' : '🚀';
+			const explanation = newMode ? 
+				'Posts will now be sent to you for preview and confirmation before posting to channel.' :
+				'Posts will now be sent directly to channel without preview.';
+			
+			await ctx.reply(`${emoji} <b>Preview Mode ${status}</b>\n\n${explanation}`, {
+				parse_mode: 'HTML',
+				reply_markup: createPostingControlMenu().reply_markup
+			});
+		} catch (err) {
+			await ctx.reply('Failed to toggle preview mode.', {
+				reply_markup: createPostingControlMenu().reply_markup
+			});
+		}
+	});
+
+	bot.hears('🧹 Clean Up Previews', async (ctx) => {
+		try {
+			const { cleanupOldPendingPosts } = await import('./scheduler');
+			const cleanedCount = cleanupOldPendingPosts();
+			
+			if (cleanedCount > 0) {
+				await ctx.reply(`🧹 <b>Cleaned Up ${cleanedCount} Expired Preview${cleanedCount > 1 ? 's' : ''}</b>\n\nExpired previews (older than 24 hours) have been removed.`, {
+					parse_mode: 'HTML',
+					reply_markup: createAdminMenu().reply_markup
+				});
+			} else {
+				await ctx.reply('✅ <b>No Expired Previews Found</b>\n\nAll pending previews are recent.', {
+					parse_mode: 'HTML',
+					reply_markup: createAdminMenu().reply_markup
+				});
+			}
+		} catch (err) {
+			await ctx.reply('Failed to clean up previews.', {
+				reply_markup: createAdminMenu().reply_markup
+			});
+		}
+	});
+
+	bot.hears('🗑️ Clear Chat History', async (ctx) => {
+		await ctx.reply('⚠️ <b>Clear Chat History</b>\n\nThis will delete all messages in this chat with the bot.\n\nTo confirm, type <code>/clearchat</code>', {
+			parse_mode: 'HTML',
+			reply_markup: createAdminMenu().reply_markup
+		});
 	});
 }

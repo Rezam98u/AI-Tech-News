@@ -146,6 +146,14 @@ async function startBot(): Promise<void> {
 			const { confirmPost } = await import('./bot/scheduler');
 			const result = await confirmPost(postId);
 			await ctx.answerCbQuery();
+			
+			// Delete the preview message
+			try {
+				await ctx.deleteMessage();
+			} catch (err) {
+				logger.warn({ err }, 'Failed to delete preview message after confirmation');
+			}
+			
 			await ctx.reply(result, { parse_mode: 'HTML' });
 		}));
 		
@@ -154,6 +162,14 @@ async function startBot(): Promise<void> {
 			const { skipPost } = await import('./bot/scheduler');
 			const result = await skipPost(postId);
 			await ctx.answerCbQuery();
+			
+			// Delete the preview message
+			try {
+				await ctx.deleteMessage();
+			} catch (err) {
+				logger.warn({ err }, 'Failed to delete preview message after skip');
+			}
+			
 			await ctx.reply(result, { parse_mode: 'HTML' });
 		}));
 		
@@ -161,6 +177,14 @@ async function startBot(): Promise<void> {
 			const postId = ctx.match[1]!;
 			const { regeneratePost } = await import('./bot/scheduler');
 			await ctx.answerCbQuery('Regenerating post...');
+			
+			// Delete the old preview message
+			try {
+				await ctx.deleteMessage();
+			} catch (err) {
+				logger.warn({ err }, 'Failed to delete preview message after regenerate');
+			}
+			
 			const result = await regeneratePost(postId);
 			await ctx.reply(result, { parse_mode: 'HTML' });
 		}));
@@ -170,6 +194,14 @@ async function startBot(): Promise<void> {
 			const { cancelPost } = await import('./bot/scheduler');
 			const result = await cancelPost(postId);
 			await ctx.answerCbQuery();
+			
+			// Delete the preview message
+			try {
+				await ctx.deleteMessage();
+			} catch (err) {
+				logger.warn({ err }, 'Failed to delete preview message after cancel');
+			}
+			
 			await ctx.reply(result, { parse_mode: 'HTML' });
 		}));
 		
@@ -178,7 +210,17 @@ async function startBot(): Promise<void> {
 			const { viewArticle } = await import('./bot/scheduler');
 			const result = await viewArticle(postId);
 			await ctx.answerCbQuery();
+			
+			// Keep the preview visible for "View Original" - just show details
 			await ctx.reply(result, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+		}));
+		
+		// List all pending previews
+		bot.action('list_previews', asyncHandler(async (ctx) => {
+			const { listPendingPosts } = await import('./bot/scheduler');
+			const result = await listPendingPosts();
+			await ctx.answerCbQuery();
+			await ctx.reply(result, { parse_mode: 'HTML' });
 		}));
 		
 		// Start the scheduler for automatic posting

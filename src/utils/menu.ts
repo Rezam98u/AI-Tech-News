@@ -42,6 +42,9 @@ export const MENU_COMMANDS: MenuCommand[] = [
 	{ command: 'toggleposting', description: '🔄 Toggle Auto Posting', category: 'admin' },
 	{ command: 'togglepreview', description: '👁️ Toggle Preview Mode', category: 'admin' },
 	{ command: 'postingstatus', description: '📊 Posting Status', category: 'admin' },
+	{ command: 'previews', description: '📋 List Pending Previews', category: 'admin' },
+	{ command: 'clearpreviews', description: '🧹 Clean Up Previews', category: 'admin' },
+	{ command: 'clearchat', description: '🗑️ Clear Bot Chat History', category: 'admin' },
 ];
 
 export function createMainMenu() {
@@ -61,7 +64,8 @@ export function createMainMenu() {
 export function createPostingControlMenu() {
 	return Markup.keyboard([
 		['📊 Posting Status', '🔄 Toggle Auto Posting'],
-		['👁️ Toggle Preview Mode', '✅ Enable Auto Posting'],
+		['👁️ Toggle Preview Mode', '📋 List Previews'],
+		['✅ Enable Auto Posting', '⏸️ Disable Auto Posting'],
 		['⏱️ Scheduler Test', '📢 Channel Test'],
 		['🏠 Main Menu']
 	]).resize().persistent();
@@ -71,9 +75,11 @@ export function createAdminMenu() {
 	return Markup.keyboard([
 		['🔧 Debug Feeds', '⏱️ Scheduler Test', '📢 Channel Test'],
 		['🧹 Reset Cache', '🗑️ Clear Seen Articles'],
+		['📋 List Previews', '🧹 Clean Up Previews'],
 		['🗑️ Delete All Posts', '🗑️ Delete Recent Posts'],
-		['⚡ Performance Stats', '🔍 Duplicate Check'],
-		['📊 Posting Control', '🏠 Main Menu']
+		['🗑️ Clear Chat History', '⚡ Performance Stats'],
+		['🔍 Duplicate Check', '📊 Posting Control'],
+		['🏠 Main Menu']
 	]).resize().persistent();
 }
 
