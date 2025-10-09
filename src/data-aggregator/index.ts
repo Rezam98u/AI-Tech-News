@@ -66,13 +66,27 @@ function extractImageUrl(item: any): string | undefined {
 }
 
 export const DEFAULT_FEEDS: string[] = [
-	'https://techcrunch.com/tag/artificial-intelligence/feed/',
-	'https://openai.com/blog/rss.xml',
-	'https://venturebeat.com/category/ai/feed/',
 	'https://www.theverge.com/rss/index.xml', // Main feed since AI-specific is 404
 	'https://huggingface.co/blog/feed.xml', // Hugging Face AI blog
 	'https://blog.google/technology/ai/rss/', // Google AI blog
 	'https://www.reddit.com/r/PromptEngineering/.rss', // Reddit r/PromptEngineering
+	'https://www.reddit.com/r/forhire/.rss', // Reddit r/forhire
+	'https://www.reddit.com/r/beermoney/.rss', // Reddit r/beermoney
+	'https://www.reddit.com/r/WorkOnline/.rss', // Reddit r/WorkOnline
+	'https://www.reddit.com/r/devopsjobs/.rss', // Reddit r/devopsjobs
+	'https://www.reddit.com/r/remotejs/.rss', // Reddit r/remotejs
+	'https://www.reddit.com/r/hiring/.rss', // Reddit r/hiring
+	'https://www.reddit.com/r/passive_income/.rss', // Reddit r/passive_income
+	'https://www.reddit.com/r/juststart/.rss', // Reddit r/juststart
+	'https://www.reddit.com/r/indiebiz/.rss', // Reddit r/indiebiz
+	'https://www.reddit.com/r/Entrepreneur/.rss', // Reddit r/Entrepreneur
+	'https://www.reddit.com/r/startups/.rss', // Reddit r/startups
+	'https://www.reddit.com/r/SideProject/.rss', // Reddit r/SideProject
+	'https://www.reddit.com/r/SaaS/.rss', // Reddit r/SaaS
+	'https://www.reddit.com/r/microsaas/.rss', // Reddit r/microsaas
+	'https://www.reddit.com/r/nocode/.rss', // Reddit r/nocode
+	'https://www.reddit.com/r/BlockchainStartups/.rss', // Reddit r/BlockchainStartups
+	'https://www.reddit.com/r/automation/.rss', // Reddit r/automation
 	// Product Hunt & Future Tools require API integration (no public RSS)
 ];
 
@@ -105,7 +119,31 @@ function getErrorMessage(err: any, url: string): string {
 	return `Network error from ${new URL(url).hostname}: ${err.message || 'Unknown error'}`;
 }
 
-export async function fetchRssFeed(url: string): Promise<Article[]> {
+// Helper function to detect if URL is a Reddit feed
+function isRedditFeed(url: string): boolean {
+	return url.includes('reddit.com');
+}
+
+// Helper function to get Reddit /new/ (latest) URL
+function getRedditNewUrl(baseUrl: string): string {
+	// Convert https://www.reddit.com/r/subreddit/.rss to https://www.reddit.com/r/subreddit/new/.rss
+	return baseUrl.replace(/\.rss$/, '/new/.rss');
+}
+
+// Remove duplicate articles by link
+function deduplicateArticles(articles: Article[]): Article[] {
+	const seen = new Set<string>();
+	return articles.filter(article => {
+		if (seen.has(article.link)) {
+			return false;
+		}
+		seen.add(article.link);
+		return true;
+	});
+}
+
+// Internal function to fetch a single RSS URL
+async function fetchSingleRssFeed(url: string): Promise<Article[]> {
 	const maxRetries = 2;
 	let retryDelay = 2000; // Start with 2 seconds
 	
@@ -175,6 +213,48 @@ export async function fetchRssFeed(url: string): Promise<Article[]> {
 	}
 	
 	return [];
+}
+
+// Main function to fetch RSS feed - handles Reddit specially to get both best and latest posts
+export async function fetchRssFeed(url: string): Promise<Article[]> {
+	// Special handling for Reddit feeds - fetch both best (hot) and latest (new)
+	if (isRedditFeed(url)) {
+		logger.info({ url }, 'Detected Reddit feed, fetching both best and latest posts');
+		
+		try {
+			// Fetch best/hot posts (default feed)
+			const bestPostsPromise = fetchSingleRssFeed(url);
+			
+			// Fetch latest/new posts
+			const newUrl = getRedditNewUrl(url);
+			const latestPostsPromise = fetchSingleRssFeed(newUrl);
+			
+			// Wait for both to complete
+			const [bestPosts, latestPosts] = await Promise.all([bestPostsPromise, latestPostsPromise]);
+			
+			// Combine and deduplicate
+			const combined = [...bestPosts, ...latestPosts];
+			const deduplicated = deduplicateArticles(combined);
+			
+			// Sort by date (newest first)
+			deduplicated.sort((a, b) => b.pubDate.localeCompare(a.pubDate));
+			
+			logger.info({ 
+				url, 
+				bestCount: bestPosts.length, 
+				latestCount: latestPosts.length,
+				totalUnique: deduplicated.length 
+			}, 'Fetched and combined Reddit best + latest posts');
+			
+			return deduplicated;
+		} catch (err) {
+			logger.error({ url, err }, 'Failed to fetch Reddit feed with best+latest, falling back to single fetch');
+			return fetchSingleRssFeed(url);
+		}
+	}
+	
+	// For non-Reddit feeds, use standard fetch
+	return fetchSingleRssFeed(url);
 }
 
 export async function fetchAllArticles(feedUrls: string[] = DEFAULT_FEEDS, options?: { maxAgeHours?: number }): Promise<Article[]> {

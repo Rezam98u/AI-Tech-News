@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import { Server } from 'http';
 import client from 'prom-client';
 import { logger } from './logger';
 
@@ -40,11 +41,17 @@ export const counters = {
 	}),
 };
 
-export function startMetricsServer(port = Number(process.env.METRICS_PORT) || 3000): void {
+let metricsServer: Server | null = null;
+
+export function startMetricsServer(port = Number(process.env.METRICS_PORT) || 3000): Server {
 	const app = express();
 
 	app.get('/health', (_req: Request, res: Response) => {
-		res.status(200).send('ok');
+		res.status(200).json({ 
+			status: 'ok', 
+			uptime: process.uptime(),
+			timestamp: new Date().toISOString()
+		});
 	});
 
 	app.get('/metrics', async (_req: Request, res: Response) => {
@@ -57,8 +64,32 @@ export function startMetricsServer(port = Number(process.env.METRICS_PORT) || 30
 		}
 	});
 
-	app.listen(port, () => {
+	metricsServer = app.listen(port, () => {
 		logger.info({ port }, 'metrics server listening');
+	});
+
+	return metricsServer;
+}
+
+/**
+ * Gracefully stop the metrics server
+ */
+export async function stopMetricsServer(): Promise<void> {
+	if (!metricsServer) {
+		return;
+	}
+
+	return new Promise((resolve, reject) => {
+		metricsServer!.close((err) => {
+			if (err) {
+				logger.error({ err }, 'Error closing metrics server');
+				reject(err);
+			} else {
+				logger.info('Metrics server closed');
+				metricsServer = null;
+				resolve();
+			}
+		});
 	});
 }
 

@@ -20,8 +20,6 @@ export const MENU_COMMANDS: MenuCommand[] = [
 	// Tools
 	{ command: 'analyze', description: '🤖 AI Analysis', category: 'tools' },
 	{ command: 'testpost', description: '🧪 Test Enhanced Post', category: 'tools' },
-	{ command: 'testpersian', description: '🧪 Test Persian Analysis', category: 'tools' },
-	{ command: 'testtranslate', description: '🌐 Test Translation', category: 'tools' },
 	{ command: 'testenglish', description: '🇺🇸 Test English Post', category: 'tools' },
 	{ command: 'feeds', description: '📡 Feed Status', category: 'tools' },
 	{ command: 'fetchfeed', description: '🎯 Fetch Specific Feed', category: 'tools' },
@@ -42,6 +40,7 @@ export const MENU_COMMANDS: MenuCommand[] = [
 	{ command: 'deletechannel', description: '🗑️ Delete All Channel Posts', category: 'admin' },
 	{ command: 'deletelast', description: '🗑️ Delete Recent Posts', category: 'admin' },
 	{ command: 'toggleposting', description: '🔄 Toggle Auto Posting', category: 'admin' },
+	{ command: 'togglepreview', description: '👁️ Toggle Preview Mode', category: 'admin' },
 	{ command: 'postingstatus', description: '📊 Posting Status', category: 'admin' },
 ];
 
@@ -49,12 +48,11 @@ export function createMainMenu() {
 	return Markup.keyboard([
 		['🛠️ AI Tools', '📰 Tech News', '💼 Business'],
 		['🔍 Jobs', '💻 Developer Prompts', '📊 Categories'],
-		['🧪 Test Post', '🧪 Test Persian', '🌐 Test Translation'],
-		['🇺🇸 Test English', '📡 Feeds', '📋 Raw'],
-		['💻 Dev Prompts DB', '🐙 GitHub Trending', '🤖 Analyze'],
-		['📊 Posting Status', '🔄 Toggle Auto Posting', '⚡ Performance'],
-		['📊 Posting Control', '🔧 Admin Tools', '❓ Help'],
-		['📱 Menu']
+		['🧪 Test Post', '🇺🇸 Test English', '📡 Feeds'],
+		['📋 Raw', '💻 Dev Prompts DB', '🐙 GitHub Trending'],
+		['🤖 Analyze', '⚡ Performance', '📊 Posting Status'],
+		['🔄 Toggle Auto Posting', '📊 Posting Control', '🔧 Admin Tools'],
+		['❓ Help', '📱 Menu']
 	]).resize().persistent();
 }
 
@@ -63,7 +61,7 @@ export function createMainMenu() {
 export function createPostingControlMenu() {
 	return Markup.keyboard([
 		['📊 Posting Status', '🔄 Toggle Auto Posting'],
-		['✅ Enable Auto Posting', '⏸️ Disable Auto Posting'],
+		['👁️ Toggle Preview Mode', '✅ Enable Auto Posting'],
 		['⏱️ Scheduler Test', '📢 Channel Test'],
 		['🏠 Main Menu']
 	]).resize().persistent();

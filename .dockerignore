@@ -1,0 +1,64 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Source files (only dist is needed)
+src/
+
+# Build artifacts
+*.tsbuildinfo
+.tsbuildinfo
+
+# Environment (should be provided at runtime)
+.env
+.env.*
+
+# Logs
+logs/
+*.log
+*.ndjson
+
+# Data files (should be mounted as volumes)
+data/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+README.md
+*.md
+docs/
+
+# Testing
+coverage/
+.nyc_output/
+**/*.test.ts
+**/*.test.js
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+tmp/
+temp/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Other
+LICENSE

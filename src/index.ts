@@ -7,7 +7,7 @@
 import 'dotenv/config';
 import { Telegraf } from 'telegraf';
 import { logger } from './logger';
-import { counters, startMetricsServer } from './metrics';
+import { counters, startMetricsServer, stopMetricsServer } from './metrics';
 import { createMainMenu } from './utils/menu';
 
 // Import modular components
@@ -16,36 +16,40 @@ import { registerMenuHandlers } from './bot/menu-handlers';
 import { startScheduler } from './bot/scheduler';
 import { initializePostService } from './services/post-service';
 import { setupGlobalErrorHandlers, errorMiddleware, asyncHandler } from './bot/error-handler';
+import { printEnvConfig, getEnvConfig } from './utils/env-validator';
 
 /**
- * Application configuration
- */
-const config = {
-	botToken: process.env.BOT_TOKEN,
-	targetChatId: process.env.TELEGRAM_TARGET_CHAT_ID,
-	targetCategory: process.env.TARGET_CATEGORY || 'AI Tool',
-	metricsPort: Number(process.env.METRICS_PORT) || 3000
-};
-
-/**
- * Validate required configuration
+ * Validate and load configuration
  */
 function validateConfig(): void {
-	if (!config.botToken) {
-		logger.error('Missing BOT_TOKEN in environment');
+	try {
+		// This will validate all environment variables and throw if invalid
+		printEnvConfig();
+	} catch (err) {
+		logger.fatal({ 
+			error: err instanceof Error ? err.message : String(err) 
+		}, 'Environment validation failed');
 		process.exit(1);
 	}
-	
-	if (!config.targetChatId) {
-		logger.warn('TELEGRAM_TARGET_CHAT_ID not set; scheduler will not post to channel');
-	}
-	
-	logger.info({
-		targetCategory: config.targetCategory,
-		targetChatId: config.targetChatId ? 'configured' : 'not set',
-		metricsPort: config.metricsPort
-	}, 'Bot configuration loaded');
 }
+
+/**
+ * Get application configuration
+ */
+const config = {
+	get botToken(): string {
+		return getEnvConfig().botToken;
+	},
+	get targetChatId(): string | undefined {
+		return getEnvConfig().targetChatId;
+	},
+	get targetCategory(): string {
+		return getEnvConfig().targetCategory;
+	},
+	get metricsPort(): number {
+		return getEnvConfig().metricsPort;
+	}
+};
 
 /**
  * Initialize and start the bot
@@ -90,7 +94,6 @@ async function startBot(): Promise<void> {
 			// Show the last fetched article
 			try {
 				const { fetchAllArticles } = await import('./data-aggregator');
-				const { createEnhancedPost, sendPostWithImage } = await import('./services/post-service');
 				const { formatDistanceToNow } = await import('./utils/time');
 				
 				// Fetch recent articles and get the most recent one
@@ -101,13 +104,14 @@ async function startBot(): Promise<void> {
 					const timeSinceFetch = formatDistanceToNow(new Date(latestArticle.pubDate));
 					const headerMessage = `📰 <b>Latest Fetched Article</b> (${timeSinceFetch} ago):`;
 					
-					await ctx.reply(headerMessage, { parse_mode: 'HTML' });
-					
-					const message = await createEnhancedPost(latestArticle);
-					if (message) {
+				await ctx.reply(headerMessage, { parse_mode: 'HTML' });
+				
+				const { createEnhancedPost, sendPostWithImage } = await import('./services/post-service');
+				const message = await createEnhancedPost(latestArticle);
+				if (message) {
 						await sendPostWithImage(ctx.chat.id.toString(), message, latestArticle.imageUrl);
 					} else {
-						await ctx.reply('❌ <b>Analysis Failed</b>\n\nUnable to analyze the latest article. This may indicate an AI analysis issue.', {
+						await ctx.reply(`❌ <b>Unable to Analyze Article</b>\n\n<b>Article:</b> ${latestArticle.title}\n\n<b>Possible reasons:</b>\n• Article may not be AI/tech related\n• AI provider may be experiencing issues\n• Article content may be too short or unclear\n\n<i>Try using /fetchfeed to get articles from a specific source.</i>`, {
 							parse_mode: 'HTML'
 						});
 					}
@@ -132,19 +136,53 @@ async function startBot(): Promise<void> {
 		// Register all menu handlers
 		registerMenuHandlers(bot);
 		
+		// Set bot instance for scheduler (needed for preview mode)
+		const { setSchedulerBot } = await import('./bot/scheduler');
+		setSchedulerBot(bot);
+		
+		// Register callback handlers for post preview actions
+		bot.action(/^confirm_(.+)$/, asyncHandler(async (ctx) => {
+			const postId = ctx.match[1]!;
+			const { confirmPost } = await import('./bot/scheduler');
+			const result = await confirmPost(postId);
+			await ctx.answerCbQuery();
+			await ctx.reply(result, { parse_mode: 'HTML' });
+		}));
+		
+		bot.action(/^skip_(.+)$/, asyncHandler(async (ctx) => {
+			const postId = ctx.match[1]!;
+			const { skipPost } = await import('./bot/scheduler');
+			const result = await skipPost(postId);
+			await ctx.answerCbQuery();
+			await ctx.reply(result, { parse_mode: 'HTML' });
+		}));
+		
+		bot.action(/^regenerate_(.+)$/, asyncHandler(async (ctx) => {
+			const postId = ctx.match[1]!;
+			const { regeneratePost } = await import('./bot/scheduler');
+			await ctx.answerCbQuery('Regenerating post...');
+			const result = await regeneratePost(postId);
+			await ctx.reply(result, { parse_mode: 'HTML' });
+		}));
+		
+		bot.action(/^cancel_(.+)$/, asyncHandler(async (ctx) => {
+			const postId = ctx.match[1]!;
+			const { cancelPost } = await import('./bot/scheduler');
+			const result = await cancelPost(postId);
+			await ctx.answerCbQuery();
+			await ctx.reply(result, { parse_mode: 'HTML' });
+		}));
+		
+		bot.action(/^view_(.+)$/, asyncHandler(async (ctx) => {
+			const postId = ctx.match[1]!;
+			const { viewArticle } = await import('./bot/scheduler');
+			const result = await viewArticle(postId);
+			await ctx.answerCbQuery();
+			await ctx.reply(result, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+		}));
+		
 		// Start the scheduler for automatic posting
 		startScheduler();
-		
-		// Graceful shutdown handlers
-		process.once('SIGINT', () => {
-			logger.info('Received SIGINT, stopping bot...');
-			bot.stop('SIGINT');
-		});
-		
-		process.once('SIGTERM', () => {
-			logger.info('Received SIGTERM, stopping bot...');
-			bot.stop('SIGTERM');
-		});
 		
 		// Start the bot
 		await bot.launch();
@@ -155,9 +193,29 @@ async function startBot(): Promise<void> {
 			metricsPort: config.metricsPort
 		}, 'AI Tech News Bot started successfully');
 		
-		// Enable graceful stop
-		process.once('SIGINT', () => bot.stop('SIGINT'));
-		process.once('SIGTERM', () => bot.stop('SIGTERM'));
+		// Graceful shutdown handlers (set up after bot.launch)
+		const gracefulShutdown = async (signal: string) => {
+			logger.info({ signal }, 'Received shutdown signal, stopping services...');
+			
+			try {
+				// Stop the bot first
+				bot.stop(signal);
+				logger.info('Bot stopped');
+				
+				// Stop the metrics server
+				await stopMetricsServer();
+				logger.info('Metrics server stopped');
+				
+				logger.info('Graceful shutdown completed');
+				process.exit(0);
+			} catch (err) {
+				logger.error({ err }, 'Error during graceful shutdown');
+				process.exit(1);
+			}
+		};
+		
+		process.once('SIGINT', () => gracefulShutdown('SIGINT'));
+		process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
 		
 	} catch (error) {
 		logger.fatal({ 

@@ -2,18 +2,53 @@
  * Bot scheduler - extracted from main index.ts
  */
 import cron from 'node-cron';
+import { Telegraf, Markup } from 'telegraf';
 import { logger } from '../logger';
 import { counters } from '../metrics';
 import { fetchAllArticles } from '../data-aggregator';
 import { filterNewArticles, markArticlesPosted } from '../storage';
 import { filterArticlesByCategory, ContentCategory } from '../categorizer';
 import { createEnhancedPost, sendPostWithImage } from '../services/post-service';
+import { Article } from '../types';
+
+// Store pending posts for preview/confirmation
+interface PendingPost {
+	article: Article;
+	message: string;
+	timestamp: number;
+}
+
+const pendingPosts = new Map<string, PendingPost>();
 
 /**
  * Article scheduler service
  */
 export class SchedulerService {
 	private isSchedulerRunning = false;
+	private bot?: Telegraf;
+	private previewMode: boolean = true; // Enable preview mode by default
+
+	/**
+	 * Set the bot instance for sending previews
+	 */
+	setBot(bot: Telegraf): void {
+		this.bot = bot;
+	}
+
+	/**
+	 * Enable or disable preview mode
+	 */
+	setPreviewMode(enabled: boolean): void {
+		this.previewMode = enabled;
+		logger.info({ previewMode: enabled }, 'Preview mode updated');
+	}
+
+	/**
+	 * Get preview mode status
+	 */
+	isPreviewMode(): boolean {
+		return this.previewMode;
+	}
 
 	/**
 	 * Start the article scheduler
@@ -141,11 +176,11 @@ export class SchedulerService {
 				link: article.link, 
 				category: targetCategory,
 				articleId 
-			}, 'scheduler: posting new article to channel');
-			
-			// Create enhanced post and send to channel
+			}, 'scheduler: preparing article for posting');
+		
+			// Create enhanced post
 			const message = await createEnhancedPost(article);
-			
+		
 			// Skip posting if analysis failed (fallback)
 			if (!message) {
 				logger.warn({ 
@@ -154,6 +189,14 @@ export class SchedulerService {
 				}, 'Skipping scheduled post due to failed AI analysis');
 				return;
 			}
+
+			// If preview mode is enabled, send preview for confirmation instead of posting
+			if (this.previewMode) {
+				await this.sendPreview(article, message, targetChat);
+				return;
+			}
+
+			// Direct post mode (no preview)
 			await sendPostWithImage(targetChat, message, article.imageUrl);
 			await markArticlesPosted([article]);
 			counters.postsSent.inc();
@@ -268,15 +311,222 @@ export class SchedulerService {
 	}
 
 	/**
+	 * Send preview to admin for confirmation
+	 */
+	private async sendPreview(article: Article, message: string, targetChat: string): Promise<void> {
+		if (!this.bot) {
+			logger.error('Bot instance not set, cannot send preview');
+			return;
+		}
+
+		try {
+			const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || targetChat;
+			const postId = `${Date.now()}_${article.link.substring(article.link.length - 10)}`;
+			
+			// Store pending post
+			pendingPosts.set(postId, {
+				article,
+				message,
+				timestamp: Date.now()
+			});
+
+			// Create preview header
+			const previewHeader = `📋 <b>POST PREVIEW - Awaiting Confirmation</b>\n\n` +
+				`📰 Source: ${article.link.includes('reddit.com') ? 'Reddit' : 'News'}\n` +
+				`⏰ Published: ${article.pubDate}\n` +
+				`━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+			const fullPreview = previewHeader + message;
+
+			// Create inline keyboard with action buttons
+			const keyboard = Markup.inlineKeyboard([
+				[
+					Markup.button.callback('✅ Send to Channel', `confirm_${postId}`),
+					Markup.button.callback('⏭️ Skip', `skip_${postId}`)
+				],
+				[
+					Markup.button.callback('🔄 Regenerate', `regenerate_${postId}`),
+					Markup.button.callback('❌ Cancel', `cancel_${postId}`)
+				],
+				[
+					Markup.button.callback('📝 View Full Article', `view_${postId}`)
+				]
+			]);
+
+			// Send preview with image if available
+			if (article.imageUrl) {
+				try {
+					await this.bot.telegram.sendPhoto(adminChatId, article.imageUrl, {
+						caption: fullPreview.substring(0, 1024), // Telegram caption limit
+						parse_mode: 'HTML',
+						...keyboard
+					});
+				} catch (err) {
+					// Fallback to text if image fails
+					await this.bot.telegram.sendMessage(adminChatId, fullPreview, {
+						parse_mode: 'HTML',
+						link_preview_options: { is_disabled: true },
+						...keyboard
+					});
+				}
+			} else {
+				await this.bot.telegram.sendMessage(adminChatId, fullPreview, {
+					parse_mode: 'HTML',
+					link_preview_options: { is_disabled: true },
+					...keyboard
+				});
+			}
+
+			logger.info({ 
+				postId, 
+				title: article.title,
+				adminChatId 
+			}, 'Preview sent to admin for confirmation');
+
+		} catch (err) {
+			logger.error({ err }, 'Failed to send preview');
+		}
+	}
+
+	/**
+	 * Handle confirmation of a pending post
+	 */
+	async confirmPost(postId: string): Promise<string> {
+		const pending = pendingPosts.get(postId);
+		
+		if (!pending) {
+			return '❌ Post not found or expired. It may have already been processed.';
+		}
+
+		try {
+			const targetChat = process.env.TELEGRAM_TARGET_CHAT_ID;
+			if (!targetChat) {
+				return '❌ Target channel not configured';
+			}
+
+			// Send to channel
+			await sendPostWithImage(targetChat, pending.message, pending.article.imageUrl);
+			await markArticlesPosted([pending.article]);
+			counters.postsSent.inc();
+
+			// Clean up
+			pendingPosts.delete(postId);
+
+			logger.info({ 
+				postId, 
+				title: pending.article.title 
+			}, 'Post confirmed and sent to channel');
+
+			return '✅ Post sent to channel successfully!';
+
+		} catch (err) {
+			logger.error({ err, postId }, 'Failed to send confirmed post');
+			return `❌ Failed to send post: ${err instanceof Error ? err.message : String(err)}`;
+		}
+	}
+
+	/**
+	 * Handle skipping a pending post
+	 */
+	async skipPost(postId: string): Promise<string> {
+		const pending = pendingPosts.get(postId);
+		
+		if (!pending) {
+			return '❌ Post not found or expired';
+		}
+
+		// Mark as posted to skip it
+		await markArticlesPosted([pending.article]);
+		pendingPosts.delete(postId);
+
+		logger.info({ postId, title: pending.article.title }, 'Post skipped by admin');
+		return '⏭️ Post skipped. It will not be shown again.';
+	}
+
+	/**
+	 * Handle regenerating a post
+	 */
+	async regeneratePost(postId: string): Promise<string> {
+		const pending = pendingPosts.get(postId);
+		
+		if (!pending) {
+			return '❌ Post not found or expired';
+		}
+
+		try {
+			// Regenerate the post
+			const newMessage = await createEnhancedPost(pending.article);
+			
+			if (!newMessage) {
+				return '❌ Failed to regenerate post - AI analysis failed';
+			}
+
+			// Update stored message
+			pending.message = newMessage;
+			pending.timestamp = Date.now();
+			pendingPosts.set(postId, pending);
+
+			// Send new preview
+			const targetChat = process.env.TELEGRAM_TARGET_CHAT_ID || '';
+			await this.sendPreview(pending.article, newMessage, targetChat);
+
+			logger.info({ postId, title: pending.article.title }, 'Post regenerated');
+			return '🔄 Post regenerated! Check the new preview above.';
+
+		} catch (err) {
+			logger.error({ err, postId }, 'Failed to regenerate post');
+			return `❌ Failed to regenerate: ${err instanceof Error ? err.message : String(err)}`;
+		}
+	}
+
+	/**
+	 * Handle canceling a pending post
+	 */
+	async cancelPost(postId: string): Promise<string> {
+		const pending = pendingPosts.get(postId);
+		
+		if (!pending) {
+			return '❌ Post not found or expired';
+		}
+
+		pendingPosts.delete(postId);
+		logger.info({ postId, title: pending.article.title }, 'Post canceled by admin');
+		return '❌ Post canceled. Article remains in queue.';
+	}
+
+	/**
+	 * View full article details
+	 */
+	async viewArticle(postId: string): Promise<string> {
+		const pending = pendingPosts.get(postId);
+		
+		if (!pending) {
+			return '❌ Post not found or expired';
+		}
+
+		const article = pending.article;
+		let details = `📰 <b>Full Article Details</b>\n\n`;
+		details += `<b>Title:</b> ${article.title}\n\n`;
+		details += `<b>Link:</b> ${article.link}\n\n`;
+		details += `<b>Published:</b> ${article.pubDate}\n\n`;
+		details += `<b>Content Snippet:</b>\n${article.contentSnippet.substring(0, 500)}${article.contentSnippet.length > 500 ? '...' : ''}`;
+
+		return details;
+	}
+
+	/**
 	 * Get scheduler status
 	 */
 	getStatus(): {
 		isRunning: boolean;
 		isSchedulerRunning: boolean;
 		autoPostingEnabled: boolean;
+		previewMode: boolean;
+		pendingPosts: number;
 		configuration: {
 			targetCategory: string;
 			targetChannel?: string;
+			adminChatId?: string;
 			cronPattern: string;
 		};
 	} {
@@ -284,9 +534,12 @@ export class SchedulerService {
 			isRunning: true, // Scheduler is always running once started
 			isSchedulerRunning: this.isSchedulerRunning,
 			autoPostingEnabled: this.isAutoPostingEnabled(),
+			previewMode: this.previewMode,
+			pendingPosts: pendingPosts.size,
 			configuration: {
 				targetCategory: (process.env.TARGET_CATEGORY as ContentCategory) || 'AI Tool',
 				...(process.env.TELEGRAM_TARGET_CHAT_ID && { targetChannel: process.env.TELEGRAM_TARGET_CHAT_ID }),
+				...(process.env.TELEGRAM_ADMIN_CHAT_ID && { adminChatId: process.env.TELEGRAM_ADMIN_CHAT_ID }),
 				cronPattern: '*/90 * * * * *' // Every 90 seconds
 			}
 		};
@@ -345,4 +598,60 @@ export function disableAutoPosting(): void {
  */
 export function toggleAutoPosting(): boolean {
 	return schedulerService.toggleAutoPosting();
+}
+
+/**
+ * Set bot instance for scheduler
+ */
+export function setSchedulerBot(bot: Telegraf): void {
+	schedulerService.setBot(bot);
+}
+
+/**
+ * Set preview mode
+ */
+export function setPreviewMode(enabled: boolean): void {
+	schedulerService.setPreviewMode(enabled);
+}
+
+/**
+ * Get preview mode status
+ */
+export function isPreviewMode(): boolean {
+	return schedulerService.isPreviewMode();
+}
+
+/**
+ * Confirm a pending post
+ */
+export function confirmPost(postId: string): Promise<string> {
+	return schedulerService.confirmPost(postId);
+}
+
+/**
+ * Skip a pending post
+ */
+export function skipPost(postId: string): Promise<string> {
+	return schedulerService.skipPost(postId);
+}
+
+/**
+ * Regenerate a pending post
+ */
+export function regeneratePost(postId: string): Promise<string> {
+	return schedulerService.regeneratePost(postId);
+}
+
+/**
+ * Cancel a pending post
+ */
+export function cancelPost(postId: string): Promise<string> {
+	return schedulerService.cancelPost(postId);
+}
+
+/**
+ * View article details
+ */
+export function viewArticle(postId: string): Promise<string> {
+	return schedulerService.viewArticle(postId);
 }

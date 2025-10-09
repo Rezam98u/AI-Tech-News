@@ -13,7 +13,7 @@ import { toggleAutoPosting, getSchedulerStatus } from './scheduler';
 /**
  * Post creation and sending functions (will be moved to post service later)
  */
-declare function createEnhancedPost(article: any, translateToPersian?: boolean): Promise<string | null>;
+declare function createEnhancedPost(article: any): Promise<string | null>;
 declare function sendPostWithImage(chatId: string, message: string, imageUrl?: string): Promise<void>;
 declare function shortenLink(url: string, maxLength?: number): string;
 
@@ -31,14 +31,32 @@ export function registerCommands(bot: Telegraf) {
 				// Show available feeds
 				let report = `📡 <b>Fetch From Specific Feed</b>\n\n`;
 				report += `Usage: <code>/fetchfeed &lt;source&gt;</code>\n\n`;
-				report += `Available sources:\n`;
-				report += `• <code>techcrunch</code> - TechCrunch AI\n`;
-				report += `• <code>openai</code> - OpenAI Blog\n`;
-				report += `• <code>venturebeat</code> - VentureBeat AI\n`;
+				report += `<b>AI & Tech News:</b>\n`;
 				report += `• <code>theverge</code> - The Verge\n`;
 				report += `• <code>huggingface</code> - Hugging Face Blog\n`;
-				report += `• <code>google</code> - Google AI Blog\n\n`;
-				report += `Example: <code>/fetchfeed huggingface</code>`;
+				report += `• <code>google</code> - Google AI Blog\n`;
+				report += `• <code>prompteng</code> - r/PromptEngineering\n\n`;
+				report += `<b>Jobs & Opportunities:</b>\n`;
+				report += `• <code>forhire</code> - r/forhire\n`;
+				report += `• <code>beermoney</code> - r/beermoney\n`;
+				report += `• <code>workonline</code> - r/WorkOnline\n`;
+				report += `• <code>devopsjobs</code> - r/devopsjobs\n`;
+				report += `• <code>remotejs</code> - r/remotejs\n`;
+				report += `• <code>hiring</code> - r/hiring\n\n`;
+				report += `<b>Business & Startups:</b>\n`;
+				report += `• <code>passiveincome</code> - r/passive_income\n`;
+				report += `• <code>juststart</code> - r/juststart\n`;
+				report += `• <code>indiebiz</code> - r/indiebiz\n`;
+				report += `• <code>entrepreneur</code> - r/Entrepreneur\n`;
+				report += `• <code>startups</code> - r/startups\n`;
+				report += `• <code>sideproject</code> - r/SideProject\n\n`;
+				report += `<b>SaaS & Tech Tools:</b>\n`;
+				report += `• <code>saas</code> - r/SaaS\n`;
+				report += `• <code>microsaas</code> - r/microsaas\n`;
+				report += `• <code>nocode</code> - r/nocode\n`;
+				report += `• <code>blockchain</code> - r/BlockchainStartups\n`;
+				report += `• <code>automation</code> - r/automation\n\n`;
+				report += `Example: <code>/fetchfeed microsaas</code>`;
 				
 				await ctx.reply(report, {
 					parse_mode: 'HTML',
@@ -51,12 +69,28 @@ export function registerCommands(bot: Telegraf) {
 			
 			// Map source names to feed URLs
 			const feedMap: { [key: string]: string } = {
-				'techcrunch': 'https://techcrunch.com/tag/artificial-intelligence/feed/',
-				'openai': 'https://openai.com/blog/rss.xml',
-				'venturebeat': 'https://venturebeat.com/category/ai/feed/',
 				'theverge': 'https://www.theverge.com/rss/index.xml',
 				'huggingface': 'https://huggingface.co/blog/feed.xml',
-				'google': 'https://blog.google/technology/ai/rss/'
+				'google': 'https://blog.google/technology/ai/rss/',
+				'prompteng': 'https://www.reddit.com/r/PromptEngineering/.rss',
+				'reddit': 'https://www.reddit.com/r/PromptEngineering/.rss', // Alias for backwards compatibility
+				'forhire': 'https://www.reddit.com/r/forhire/.rss',
+				'beermoney': 'https://www.reddit.com/r/beermoney/.rss',
+				'workonline': 'https://www.reddit.com/r/WorkOnline/.rss',
+				'devopsjobs': 'https://www.reddit.com/r/devopsjobs/.rss',
+				'remotejs': 'https://www.reddit.com/r/remotejs/.rss',
+				'hiring': 'https://www.reddit.com/r/hiring/.rss',
+				'passiveincome': 'https://www.reddit.com/r/passive_income/.rss',
+				'juststart': 'https://www.reddit.com/r/juststart/.rss',
+				'indiebiz': 'https://www.reddit.com/r/indiebiz/.rss',
+				'entrepreneur': 'https://www.reddit.com/r/Entrepreneur/.rss',
+				'startups': 'https://www.reddit.com/r/startups/.rss',
+				'sideproject': 'https://www.reddit.com/r/SideProject/.rss',
+				'saas': 'https://www.reddit.com/r/SaaS/.rss',
+				'microsaas': 'https://www.reddit.com/r/microsaas/.rss',
+				'nocode': 'https://www.reddit.com/r/nocode/.rss',
+				'blockchain': 'https://www.reddit.com/r/BlockchainStartups/.rss',
+				'automation': 'https://www.reddit.com/r/automation/.rss'
 			};
 			
 			const feedUrl = feedMap[source];
@@ -206,80 +240,6 @@ export function registerCommands(bot: Telegraf) {
 		}
 	});
 
-	bot.command('testpersian', async (ctx) => {
-		counters.commandsHandled.inc({ command: 'testpersian' });
-		try {
-			// Create a test Persian article
-			const testPersianArticle = {
-				title: 'راه‌اندازی مدل جدید هوش مصنوعی توسط شرکت ایرانی',
-				link: 'https://example.com/persian-ai-news',
-				contentSnippet: 'شرکت فناوری ایرانی امروز از راه‌اندازی مدل جدید هوش مصنوعی خبر داد که قابلیت‌های پیشرفته‌ای در پردازش زبان فارسی دارد. این مدل می‌تواند در صنایع مختلف از جمله بانکداری، آموزش و خدمات مشتریان مورد استفاده قرار گیرد.',
-				pubDate: new Date().toISOString(),
-				imageUrl: undefined
-			};
-			
-			await ctx.reply('🧪 **Testing Persian Language Analysis**\n\nGenerating AI-enhanced post for Persian content...');
-			
-			const message = await createEnhancedPost(testPersianArticle);
-			
-			if (message) {
-				await ctx.reply(message, {
-					reply_markup: createMainMenu().reply_markup
-				});
-			} else {
-				await ctx.reply('❌ <b>Persian Test Failed</b>\n\nUnable to analyze the Persian test article. This may indicate an AI analysis issue.', {
-					reply_markup: createMainMenu().reply_markup
-				});
-			}
-			
-			await ctx.reply('✅ **Persian Test Complete!**\n\nThis demonstrates how the bot analyzes and formats Persian content with appropriate language detection and business impact evaluation.', {
-				reply_markup: createMainMenu().reply_markup
-			});
-			
-		} catch (err) {
-			await ctx.reply(`Persian test failed: ${err}`, {
-				reply_markup: createMainMenu().reply_markup
-			});
-		}
-	});
-
-	bot.command('testtranslate', async (ctx) => {
-		counters.commandsHandled.inc({ command: 'testtranslate' });
-		try {
-			// Create a test English article
-			const testEnglishArticle = {
-				title: 'OpenAI Announces Major Breakthrough in AI Model Performance',
-				link: 'https://example.com/english-ai-news',
-				contentSnippet: 'OpenAI has announced a significant breakthrough in their latest AI model, achieving unprecedented performance in natural language understanding and generation. The new model demonstrates improved capabilities in reasoning, creativity, and problem-solving across various domains.',
-				pubDate: new Date().toISOString(),
-				imageUrl: undefined
-			};
-			
-			await ctx.reply('🌐 **Testing English to Persian Translation**\n\nTranslating and analyzing English content to Persian...');
-			
-			const message = await createEnhancedPost(testEnglishArticle, true); // Explicitly request Persian translation
-			
-			if (message) {
-				await ctx.reply(message, {
-					reply_markup: createMainMenu().reply_markup
-				});
-			} else {
-				await ctx.reply('❌ <b>Translation Test Failed</b>\n\nUnable to analyze and translate the test article. This may indicate an AI analysis issue.', {
-					reply_markup: createMainMenu().reply_markup
-				});
-			}
-			
-			await ctx.reply('✅ **Translation Test Complete!**\n\nThis demonstrates how the bot translates English content to Persian with full AI analysis, business impact evaluation, and proper formatting.', {
-				reply_markup: createMainMenu().reply_markup
-			});
-			
-		} catch (err) {
-			await ctx.reply(`Translation test failed: ${err}`, {
-				reply_markup: createMainMenu().reply_markup
-			});
-		}
-	});
-
 	bot.command('testenglish', async (ctx) => {
 		counters.commandsHandled.inc({ command: 'testenglish' });
 		try {
@@ -292,11 +252,11 @@ export function registerCommands(bot: Telegraf) {
 				imageUrl: undefined
 			};
 			
-			await ctx.reply('🇺🇸 **Testing English Language Post**\n\nGenerating AI-enhanced post in English...');
-			
-			const message = await createEnhancedPost(testEnglishArticle, false); // Request English analysis
-			
-			if (message) {
+		await ctx.reply('🇺🇸 **Testing English Language Post**\n\nGenerating AI-enhanced post in English...');
+		
+		const message = await createEnhancedPost(testEnglishArticle);
+		
+		if (message) {
 				await ctx.reply(message, {
 					reply_markup: createMainMenu().reply_markup
 				});
@@ -670,22 +630,26 @@ export function registerCommands(bot: Telegraf) {
 			const autoPostingStatus = status.autoPostingEnabled ? '✅ Enabled' : '⏸️ Disabled';
 			const schedulerStatus = status.isRunning ? '🟢 Running' : '🔴 Stopped';
 			const processingStatus = status.isSchedulerRunning ? '⏳ Processing' : '💤 Idle';
+			const previewModeStatus = status.previewMode ? '👁️ Enabled (Preview first)' : '🚀 Disabled (Direct post)';
 			
-			let report = `📊 **Scheduler Status Report**\n\n`;
-			report += `🤖 **Automatic Posting:** ${autoPostingStatus}\n`;
-			report += `⚙️ **Scheduler:** ${schedulerStatus}\n`;
-			report += `🔄 **Current State:** ${processingStatus}\n\n`;
+			let report = `📊 <b>Scheduler Status Report</b>\n\n`;
+			report += `🤖 <b>Automatic Posting:</b> ${autoPostingStatus}\n`;
+			report += `👁️ <b>Preview Mode:</b> ${previewModeStatus}\n`;
+			report += `⚙️ <b>Scheduler:</b> ${schedulerStatus}\n`;
+			report += `🔄 <b>Current State:</b> ${processingStatus}\n`;
+			report += `📋 <b>Pending Posts:</b> ${status.pendingPosts}\n\n`;
 			
-			report += `⚙️ **Configuration:**\n`;
+			report += `⚙️ <b>Configuration:</b>\n`;
 			report += `• Target Category: ${status.configuration.targetCategory}\n`;
 			report += `• Target Channel: ${status.configuration.targetChannel || 'Not configured'}\n`;
+			report += `• Admin Chat: ${status.configuration.adminChatId || 'Same as target'}\n`;
 			report += `• Cron Pattern: ${status.configuration.cronPattern}\n\n`;
 			
-			report += `🎮 **Commands:**\n`;
-			report += `• \`/toggleposting\` - Toggle automatic posting\n`;
-			report += `• \`/postingstatus\` - Show this status\n\n`;
-			report += `ℹ️ **Note:** Automatic posting is disabled by default for safety.\n`;
-			report += `Use \`/toggleposting\` to enable when ready.`;
+			report += `🎮 <b>Commands:</b>\n`;
+			report += `• <code>/toggleposting</code> - Toggle automatic posting\n`;
+			report += `• <code>/togglepreview</code> - Toggle preview mode\n`;
+			report += `• <code>/postingstatus</code> - Show this status\n\n`;
+			report += `ℹ️ <b>Note:</b> Preview mode shows posts for approval before sending to channel.`;
 			
 			await ctx.reply(report, {
 				parse_mode: 'HTML',
@@ -693,6 +657,31 @@ export function registerCommands(bot: Telegraf) {
 			});
 		} catch (err) {
 			await ctx.reply('Failed to get posting status.', {
+				reply_markup: createMainMenu().reply_markup
+			});
+		}
+	});
+
+	bot.command('togglepreview', async (ctx) => {
+		counters.commandsHandled.inc({ command: 'togglepreview' });
+		try {
+			const { isPreviewMode, setPreviewMode } = await import('./scheduler');
+			const currentMode = isPreviewMode();
+			setPreviewMode(!currentMode);
+			const newMode = !currentMode;
+			
+			const status = newMode ? 'Enabled' : 'Disabled';
+			const emoji = newMode ? '👁️' : '🚀';
+			const explanation = newMode ? 
+				'Posts will now be sent to you for preview and confirmation before posting to channel.' :
+				'Posts will now be sent directly to channel without preview.';
+			
+			await ctx.reply(`${emoji} <b>Preview Mode ${status}</b>\n\n${explanation}`, {
+				parse_mode: 'HTML',
+				reply_markup: createMainMenu().reply_markup
+			});
+		} catch (err) {
+			await ctx.reply('Failed to toggle preview mode.', {
 				reply_markup: createMainMenu().reply_markup
 			});
 		}

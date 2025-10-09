@@ -1,6 +1,7 @@
 import { Article, AnalysisResult } from '../types';
 import { AIProviderFactory, detectAIProvider, buildEnhancedPrompt } from './providers';
 import { logger } from '../logger';
+import { sanitizeAnalysisResult } from '../utils/sanitizer';
 
 // Extended result type to include fallback flag
 export interface AnalysisResultWithFallback extends AnalysisResult {
@@ -18,52 +19,43 @@ function coerceResult(obj: any): AnalysisResult {
 	};
 }
 
-export async function analyzeArticle(article: Article, translateToPersian: boolean = true): Promise<AnalysisResultWithFallback> {
+export async function analyzeArticle(article: Article): Promise<AnalysisResultWithFallback> {
 	try {
 		// Detect and configure AI provider
 		const config = detectAIProvider();
-		logger.info({ provider: config.provider, model: config.model, translateToPersian }, 'Using AI provider for analysis');
+		logger.info({ provider: config.provider, model: config.model }, 'Using AI provider for analysis');
 		
 		const provider = AIProviderFactory.createProvider(config);
-		const prompt = buildEnhancedPrompt(article, translateToPersian);
+		const prompt = buildEnhancedPrompt(article);
 		
 		// Analyze with the selected provider
 		const parsed = await provider.analyze(prompt);
+		
+		// Sanitize the result before processing
+		const sanitized = sanitizeAnalysisResult(parsed);
+		
 		logger.info({ 
 			provider: config.provider, 
 			title: article.title,
-			hasDescription: !!parsed.description,
-			hashtagCount: parsed.hashtags?.length || 0,
-			translateToPersian
+			hasDescription: !!sanitized.description,
+			hashtagCount: sanitized.hashtags?.length || 0
 		}, 'AI analysis completed successfully');
 		
-		return { ...coerceResult(parsed), isFallback: false };
+		return { ...coerceResult(sanitized), isFallback: false };
 		
 	} catch (err) {
-		logger.error({ err: err instanceof Error ? err.message : String(err), translateToPersian }, 'AI analysis failed');
+		logger.error({ err: err instanceof Error ? err.message : String(err) }, 'AI analysis failed');
 		
-		// Return fallback analysis based on language
-		if (translateToPersian) {
-			return {
-				tldr: `اخبار: ${article.title}`,
-				bullets: ['تحول کلیدی در حوزه هوش مصنوعی/فناوری', 'تأثیر بالقوه بر کسب‌وکارها', 'ارزش پیگیری برای به‌روزرسانی‌ها'],
-				business_implication: '', // No business implication for fallback
-				target_audience: 'متخصصان کسب‌وکار، مدیران محصول، و رهبران فناوری',
-				description: `${article.title} - این آخرین تحولات می‌تواند تأثیرات مهمی بر صنعت فناوری و کسب‌وکارها داشته باشد.`,
-				hashtags: ['هوش_مصنوعی', 'اخبار_فناوری', 'نوآوری', 'کسب_وکار', 'فناوری', 'به_روزرسانی'],
-				isFallback: true
-			};
-		} else {
-			return {
-				tldr: `Breaking: ${article.title}`,
-				bullets: ['Key development in AI/tech space', 'Potential impact on businesses', 'Worth monitoring for updates'],
-				business_implication: '', // No business implication for fallback
-				target_audience: 'Business professionals, product managers, and tech leaders',
-				description: `${article.title} - This latest development in the AI/tech space could have significant implications for businesses and professionals.`,
-				hashtags: ['AI', 'TechNews', 'Innovation', 'Business', 'Technology', 'Update'],
-				isFallback: true
-			};
-		}
+		// Return fallback analysis
+		return {
+			tldr: `Breaking: ${article.title}`,
+			bullets: ['Key development in AI/tech space', 'Potential impact on businesses', 'Worth monitoring for updates'],
+			business_implication: '', // No business implication for fallback
+			target_audience: 'Business professionals, product managers, and tech leaders',
+			description: `${article.title} - This latest development in the AI/tech space could have significant implications for businesses and professionals.`,
+			hashtags: ['AI', 'TechNews', 'Innovation', 'Business', 'Technology', 'Update'],
+			isFallback: true
+		};
 	}
 }
 

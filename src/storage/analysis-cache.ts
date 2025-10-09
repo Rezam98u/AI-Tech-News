@@ -12,6 +12,7 @@ interface CachedAnalysis {
 	analysis: AnalysisResult;
 	timestamp: string;
 	title: string; // For debugging/monitoring
+	expiresAt?: string; // Optional expiration timestamp
 }
 
 interface AnalysisCache {
@@ -45,10 +46,26 @@ export async function getCachedAnalysis(article: Article): Promise<AnalysisResul
 		const cached = cache[articleId];
 		
 		if (cached) {
+			// Check if cache has expired
+			if (cached.expiresAt) {
+				const expiresAt = new Date(cached.expiresAt);
+				const now = new Date();
+				
+				if (now > expiresAt) {
+					logger.debug({ 
+						title: article.title, 
+						articleId,
+						expiredAt: cached.expiresAt 
+					}, 'analysis: cache expired, will fetch new analysis');
+					return null;
+				}
+			}
+			
 			logger.debug({ 
 				title: article.title, 
 				articleId,
-				cacheTimestamp: cached.timestamp 
+				cacheTimestamp: cached.timestamp,
+				expiresAt: cached.expiresAt || 'never'
 			}, 'analysis: using cached result');
 			return cached.analysis;
 		}
@@ -60,29 +77,61 @@ export async function getCachedAnalysis(article: Article): Promise<AnalysisResul
 	}
 }
 
-export async function cacheAnalysis(article: Article, analysis: AnalysisResult): Promise<void> {
+export async function cacheAnalysis(
+	article: Article, 
+	analysis: AnalysisResult, 
+	ttlHours: number = 24 * 7 // Default: 7 days
+): Promise<void> {
 	try {
 		const cache = await loadAnalysisCache();
 		const articleId = getArticleId(article);
+		const now = new Date();
+		
+		// Calculate expiration time
+		const expiresAt = new Date(now.getTime() + ttlHours * 60 * 60 * 1000);
 		
 		cache[articleId] = {
 			articleId,
 			analysis,
-			timestamp: new Date().toISOString(),
-			title: article.title
+			timestamp: now.toISOString(),
+			title: article.title,
+			expiresAt: expiresAt.toISOString()
 		};
 		
-		// Clean up old cache entries (keep only last 1000)
+		// Clean up old and expired cache entries
 		const entries = Object.values(cache);
-		if (entries.length > 1000) {
-			entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-			const keepEntries = entries.slice(0, 1000);
+		
+		// Remove expired entries first
+		const validEntries = entries.filter(entry => {
+			if (!entry.expiresAt) return true; // Keep entries without expiration
+			return new Date(entry.expiresAt) > now;
+		});
+		
+		// Keep only the 1000 most recent valid entries
+		if (validEntries.length > 1000) {
+			validEntries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+			const keepEntries = validEntries.slice(0, 1000);
 			const newCache: AnalysisCache = {};
 			keepEntries.forEach(entry => {
 				newCache[entry.articleId] = entry;
 			});
 			await saveAnalysisCache(newCache);
-			logger.info({ cleaned: entries.length - 1000 }, 'analysis cache: cleaned old entries');
+			logger.info({ 
+				expired: entries.length - validEntries.length,
+				cleaned: validEntries.length - 1000,
+				total: keepEntries.length
+			}, 'analysis cache: cleaned expired and old entries');
+		} else if (validEntries.length < entries.length) {
+			// Just remove expired entries
+			const newCache: AnalysisCache = {};
+			validEntries.forEach(entry => {
+				newCache[entry.articleId] = entry;
+			});
+			await saveAnalysisCache(newCache);
+			logger.info({ 
+				expired: entries.length - validEntries.length,
+				remaining: validEntries.length
+			}, 'analysis cache: cleaned expired entries');
 		} else {
 			await saveAnalysisCache(cache);
 		}
@@ -90,8 +139,10 @@ export async function cacheAnalysis(article: Article, analysis: AnalysisResult):
 		logger.debug({ 
 			title: article.title, 
 			articleId,
-			cacheSize: Object.keys(cache).length 
-		}, 'analysis: cached result');
+			cacheSize: Object.keys(cache).length,
+			expiresAt: expiresAt.toISOString(),
+			ttlHours
+		}, 'analysis: cached result with TTL');
 		
 	} catch (err) {
 		logger.warn({ err }, 'failed to cache analysis');

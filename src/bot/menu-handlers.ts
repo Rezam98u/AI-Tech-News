@@ -31,8 +31,7 @@ export function registerMenuHandlers(bot: Telegraf) {
 
 <b>Main Features:</b>
 • 📰 Latest news from AI/tech sources
-• 🤖 AI-powered content analysis  
-• 🇮🇷 Persian language support
+• 🤖 AI-powered content analysis
 • 📊 Performance monitoring
 • 🗑️ Channel management tools
 • ⚙️ <b>Automatic posting control</b> (disabled by default)
@@ -243,9 +242,9 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 				return;
 			}
 			
-			const testArticle = articles[0]!;
-			const message = await createEnhancedPost(testArticle);
-			if (message) {
+		const testArticle = articles[0]!;
+		const message = await createEnhancedPost(testArticle);
+		if (message) {
 				await sendPostWithImage(ctx.chat.id.toString(), message, testArticle.imageUrl);
 			} else {
 				await ctx.reply('❌ <b>Test Post Failed</b>\n\nUnable to analyze the test article. This may indicate an AI analysis issue.', {
@@ -254,74 +253,6 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 			}
 		} catch (err) {
 			await ctx.reply('Failed to create test post.');
-		}
-	});
-
-	bot.hears('🧪 Test Persian', async (ctx) => {
-		await ctx.reply('🧪 **Testing Persian Language Analysis**\n\nGenerating AI-enhanced post for Persian content...');
-		try {
-			// Create a test Persian article
-				const testPersianArticle = {
-					title: 'راه‌اندازی مدل جدید هوش مصنوعی توسط شرکت ایرانی',
-					link: 'https://example.com/persian-ai-news',
-					contentSnippet: 'شرکت فناوری ایرانی امروز از راه‌اندازی مدل جدید هوش مصنوعی خبر داد که قابلیت‌های پیشرفته‌ای در پردازش زبان فارسی دارد. این مدل می‌تواند در صنایع مختلف از جمله بانکداری، آموزش و خدمات مشتریان مورد استفاده قرار گیرد.',
-					pubDate: new Date().toISOString()
-				};
-			
-			const message = await createEnhancedPost(testPersianArticle);
-			
-			if (message) {
-				await ctx.reply(message, {
-					reply_markup: createMainMenu().reply_markup
-				});
-			} else {
-				await ctx.reply('❌ <b>Persian Test Failed</b>\n\nUnable to analyze the Persian test article. This may indicate an AI analysis issue.', {
-					reply_markup: createMainMenu().reply_markup
-				});
-			}
-			
-			await ctx.reply('✅ **Persian Test Complete!**\n\nThis demonstrates how the bot analyzes and formats Persian content with appropriate language detection and business impact evaluation.', {
-				reply_markup: createMainMenu().reply_markup
-			});
-			
-		} catch (err) {
-			await ctx.reply(`Persian test failed: ${err}`, {
-				reply_markup: createMainMenu().reply_markup
-			});
-		}
-	});
-
-	bot.hears('🌐 Test Translation', async (ctx) => {
-		await ctx.reply('🌐 **Testing English to Persian Translation**\n\nTranslating and analyzing English content to Persian...');
-		try {
-			// Create a test English article
-				const testEnglishArticle = {
-					title: 'OpenAI Announces Major Breakthrough in AI Model Performance',
-					link: 'https://example.com/english-ai-news',
-					contentSnippet: 'OpenAI has announced a significant breakthrough in their latest AI model, achieving unprecedented performance in natural language understanding and generation. The new model demonstrates improved capabilities in reasoning, creativity, and problem-solving across various domains.',
-					pubDate: new Date().toISOString()
-				};
-			
-			const message = await createEnhancedPost(testEnglishArticle, true); // Explicitly request Persian translation
-			
-			if (message) {
-				await ctx.reply(message, {
-					reply_markup: createMainMenu().reply_markup
-				});
-			} else {
-				await ctx.reply('❌ <b>Translation Test Failed</b>\n\nUnable to analyze and translate the test article. This may indicate an AI analysis issue.', {
-					reply_markup: createMainMenu().reply_markup
-				});
-			}
-			
-			await ctx.reply('✅ **Translation Test Complete!**\n\nThis demonstrates how the bot translates English content to Persian with full AI analysis, business impact evaluation, and proper formatting.', {
-				reply_markup: createMainMenu().reply_markup
-			});
-			
-		} catch (err) {
-			await ctx.reply(`Translation test failed: ${err}`, {
-				reply_markup: createMainMenu().reply_markup
-			});
 		}
 	});
 
@@ -336,7 +267,7 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 					pubDate: new Date().toISOString()
 				};
 			
-			const message = await createEnhancedPost(testEnglishArticle, false); // Request English analysis
+			const message = await createEnhancedPost(testEnglishArticle);
 			
 			if (message) {
 				await ctx.reply(message, {

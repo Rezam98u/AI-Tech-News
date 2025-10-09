@@ -5,7 +5,6 @@ import { Telegraf } from 'telegraf';
 import { Article } from '../types';
 import { getPostReadyAnalysis } from '../ai-analysis/optimized';
 import { getTimeAgo } from '../utils/time';
-import { isPersianText, isValuableBusinessImpact, formatPersianText } from '../utils/persian-utils';
 import { calculateHtmlLength, splitIntoThreads, buildHtmlPost, LIMITS } from '../utils/html-utils';
 import { logger } from '../logger';
 
@@ -24,17 +23,16 @@ export class PostService {
 	 * Create an enhanced post with AI analysis and HTML formatting
 	 * Returns null if analysis is fallback (to prevent posting)
 	 */
-	async createEnhancedPost(article: Article, translateToPersian: boolean = true): Promise<string | null> {
+	async createEnhancedPost(article: Article): Promise<string | null> {
 		try {
 			// Use optimized AI analysis with caching
-			logger.info({ title: article.title, translateToPersian }, 'Generating optimized AI analysis for post');
-			const analysis = await getPostReadyAnalysis(article, translateToPersian);
+			logger.info({ title: article.title }, 'Generating optimized AI analysis for post');
+			const analysis = await getPostReadyAnalysis(article);
 			
 			// Check if analysis is fallback - skip posting if so
 			if (analysis.isFallback) {
 				logger.warn({ 
-					title: article.title,
-					translateToPersian 
+					title: article.title
 				}, 'Skipping post due to fallback analysis - AI analysis failed');
 				return null;
 			}
@@ -42,32 +40,19 @@ export class PostService {
 			logger.info({ 
 				title: article.title, 
 				hasDescription: !!analysis.description,
-				hashtagCount: analysis.hashtags.length,
-				translateToPersian
+				hashtagCount: analysis.hashtags.length
 			}, 'Optimized AI analysis completed');
-			
-			// Detect if content is in Persian (either original or translated)
-			const isPersian = isPersianText(article.title + ' ' + analysis.tldr + ' ' + analysis.description) || translateToPersian;
 			
 			const timeAgo = getTimeAgo(article.pubDate);
 			
-			// Format content for Persian if needed
-			let formattedTldr = analysis.tldr;
-			let formattedDescription = analysis.description;
-			let formattedBullets = analysis.bullets || [];
-			let formattedBusinessImpact = analysis.business_implication?.trim() || '';
+			// Format content
+			const formattedTldr = analysis.tldr;
+			const formattedDescription = analysis.description;
+			const formattedBullets = analysis.bullets || [];
+			const formattedBusinessImpact = analysis.business_implication?.trim() || '';
 			
-			if (isPersian) {
-				formattedTldr = formatPersianText(formattedTldr);
-				formattedDescription = formatPersianText(formattedDescription);
-				formattedBullets = formattedBullets.map(bullet => formatPersianText(bullet));
-				if (formattedBusinessImpact) {
-					formattedBusinessImpact = formatPersianText(formattedBusinessImpact);
-				}
-			}
-			
-			// Check if business impact is valuable
-			const isValueableBusinessImpact = isValuableBusinessImpact(formattedBusinessImpact, isPersian);
+			// Check if business impact is valuable (simple check for non-empty and meaningful content)
+			const isValueableBusinessImpact = formattedBusinessImpact.length > 20;
 			
 			// Build HTML post using utility function
 			const htmlPost = buildHtmlPost({
@@ -78,7 +63,7 @@ export class PostService {
 				hashtags: analysis.hashtags,
 				timeAgo,
 				link: article.link,
-				isPersian,
+				isPersian: false,
 				maxLength: LIMITS.SINGLE_POST
 			});
 			
@@ -86,9 +71,7 @@ export class PostService {
 			
 			logger.info({ 
 				title: article.title, 
-				postLength, 
-				isPersian, 
-				translateToPersian,
+				postLength,
 				hasBusinessImpact: isValueableBusinessImpact 
 			}, 'HTML enhanced post created successfully');
 			
@@ -106,8 +89,7 @@ export class PostService {
 		} catch (err) {
 			logger.error({ 
 				err: err instanceof Error ? err.message : String(err), 
-				article: article.title,
-				translateToPersian
+				article: article.title
 			}, 'Failed to create enhanced post - skipping due to error');
 			
 			// Don't create fallback post - return null to skip posting
@@ -119,9 +101,9 @@ export class PostService {
 	 * Create threaded posts for long content
 	 * Returns empty array if analysis is fallback (to prevent posting)
 	 */
-	async createThreadedPost(article: Article, translateToPersian: boolean = true): Promise<string[]> {
+	async createThreadedPost(article: Article): Promise<string[]> {
 		try {
-			const fullPost = await this.createEnhancedPost(article, translateToPersian);
+			const fullPost = await this.createEnhancedPost(article);
 			
 			// If createEnhancedPost returned null (fallback analysis), return empty array
 			if (!fullPost) {
@@ -323,8 +305,8 @@ export function getPostService(): PostService {
 /**
  * Convenience functions for backward compatibility
  */
-export async function createEnhancedPost(article: Article, translateToPersian?: boolean): Promise<string | null> {
-	return getPostService().createEnhancedPost(article, translateToPersian);
+export async function createEnhancedPost(article: Article): Promise<string | null> {
+	return getPostService().createEnhancedPost(article);
 }
 
 export async function sendPostWithImage(chatId: string, message: string, imageUrl?: string): Promise<void> {
@@ -334,8 +316,8 @@ export async function sendPostWithImage(chatId: string, message: string, imageUr
 /**
  * New convenience functions for threaded posts
  */
-export async function createThreadedPost(article: Article, translateToPersian?: boolean): Promise<string[]> {
-	return getPostService().createThreadedPost(article, translateToPersian);
+export async function createThreadedPost(article: Article): Promise<string[]> {
+	return getPostService().createThreadedPost(article);
 }
 
 export async function sendThreadedPost(chatId: string, messages: string[], imageUrl?: string): Promise<void> {
