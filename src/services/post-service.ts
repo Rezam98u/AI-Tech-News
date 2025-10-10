@@ -63,6 +63,7 @@ export class PostService {
 				hashtags: analysis.hashtags,
 				timeAgo,
 				link: article.link,
+				...(article.externalLink && { externalLink: article.externalLink }),
 				isPersian: false,
 				maxLength: LIMITS.SINGLE_POST
 			});
@@ -322,4 +323,64 @@ export async function createThreadedPost(article: Article): Promise<string[]> {
 
 export async function sendThreadedPost(chatId: string, messages: string[], imageUrl?: string): Promise<void> {
 	return getPostService().sendThreadedPost(chatId, messages, imageUrl);
+}
+
+/**
+ * Create enhanced post with automatic provider fallback retry logic
+ * This function directly uses the enhanced fallback analysis for better reliability
+ */
+export async function createEnhancedPostWithFallback(article: Article): Promise<string | null> {
+	try {
+		// Use the enhanced fallback analysis directly from providers
+		const { analyzeWithFallback } = await import('../ai-analysis/providers');
+		const { sanitizeAnalysisResult } = await import('../utils/sanitizer');
+		
+		logger.info({ title: article.title }, 'Creating enhanced post with fallback retry logic');
+		
+		const rawResult = await analyzeWithFallback(article, undefined, {
+			maxRetries: 2,
+			retryDelay: 1000,
+			timeout: 30000
+		});
+		
+		// Sanitize the result
+		const sanitized = sanitizeAnalysisResult(rawResult);
+		
+		if (!sanitized) {
+			logger.warn({ title: article.title }, 'Sanitized result is null');
+			return null;
+		}
+		
+		const timeAgo = getTimeAgo(article.pubDate);
+		
+		// Build HTML post using utility function
+		const htmlPost = buildHtmlPost({
+			tldr: sanitized.tldr || `Latest: ${article.title}`,
+			bullets: sanitized.bullets || [],
+			businessImpact: sanitized.business_implication || '',
+			description: sanitized.description || `${article.title} - This development could have implications for the tech industry.`,
+			hashtags: sanitized.hashtags || ['AI', 'TechNews', 'Innovation'],
+			timeAgo,
+			link: article.link,
+			...(article.externalLink && { externalLink: article.externalLink }),
+			isPersian: false,
+			maxLength: LIMITS.SINGLE_POST
+		});
+		
+		logger.info({ 
+			title: article.title,
+			postLength: calculateHtmlLength(htmlPost)
+		}, 'Enhanced post created successfully with fallback retry logic');
+		
+		return htmlPost;
+		
+	} catch (err) {
+		logger.error({ 
+			err: err instanceof Error ? err.message : String(err), 
+			article: article.title
+		}, 'Failed to create enhanced post with fallback - all providers exhausted');
+		
+		// Don't create fallback post - return null to skip posting
+		return null;
+	}
 }

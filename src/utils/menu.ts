@@ -44,13 +44,15 @@ export const MENU_COMMANDS: MenuCommand[] = [
 	{ command: 'postingstatus', description: '📊 Posting Status', category: 'admin' },
 	{ command: 'previews', description: '📋 List Pending Previews', category: 'admin' },
 	{ command: 'clearpreviews', description: '🧹 Clean Up Previews', category: 'admin' },
+	{ command: 'reddit_browse', description: '📱 Browse Reddit (Interactive)', category: 'main' },
+	{ command: 'reddit', description: '📱 Reddit Browser (Shortcut)', category: 'main' },
 	{ command: 'clearchat', description: '🗑️ Clear Bot Chat History', category: 'admin' },
 ];
 
 export function createMainMenu() {
 	return Markup.keyboard([
 		['🛠️ AI Tools', '📰 Tech News', '💼 Business'],
-		['🔍 Jobs', '💻 Developer Prompts', '📊 Categories'],
+		['📱 Browse Reddit', '🔍 Jobs', '📊 Categories'],
 		['🧪 Test Post', '🇺🇸 Test English', '📡 Feeds'],
 		['📋 Raw', '💻 Dev Prompts DB', '🐙 GitHub Trending'],
 		['🤖 Analyze', '⚡ Performance', '📊 Posting Status'],

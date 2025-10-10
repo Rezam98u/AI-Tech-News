@@ -17,6 +17,7 @@ import { startScheduler } from './bot/scheduler';
 import { initializePostService } from './services/post-service';
 import { setupGlobalErrorHandlers, errorMiddleware, asyncHandler } from './bot/error-handler';
 import { printEnvConfig, getEnvConfig } from './utils/env-validator';
+import { redditBrowser } from './reddit-browser';
 
 /**
  * Validate and load configuration
@@ -62,11 +63,14 @@ async function startBot(): Promise<void> {
 		// Setup global error handlers
 		setupGlobalErrorHandlers();
 		
-		// Create bot instance
-		const bot = new Telegraf(config.botToken!);
+		// Create bot instance with extended timeout (120 seconds for AI processing)
+		const bot = new Telegraf(config.botToken!, {
+			handlerTimeout: 120000 // 120 seconds (increased from default 90s)
+		});
 		
 		// Initialize services
 		initializePostService(bot);
+		redditBrowser.setBot(bot);
 		startMetricsServer();
 		
 		// Setup error middleware
@@ -106,8 +110,8 @@ async function startBot(): Promise<void> {
 					
 				await ctx.reply(headerMessage, { parse_mode: 'HTML' });
 				
-				const { createEnhancedPost, sendPostWithImage } = await import('./services/post-service');
-				const message = await createEnhancedPost(latestArticle);
+				const { createEnhancedPostWithFallback, sendPostWithImage } = await import('./services/post-service');
+				const message = await createEnhancedPostWithFallback(latestArticle);
 				if (message) {
 						await sendPostWithImage(ctx.chat.id.toString(), message, latestArticle.imageUrl);
 					} else {

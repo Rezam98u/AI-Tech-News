@@ -5,7 +5,9 @@ A sophisticated Telegram bot that automatically curates, analyzes, and posts AI/
 ## ✨ Features
 
 - **📰 Multi-Source RSS Aggregation**: Fetches from TechCrunch, OpenAI Blog, VentureBeat, The Verge, Hugging Face, Google AI Blog, and Reddit
-- **🧠 AI-Powered Analysis**: Uses OpenAI, DeepSeek, or Groq to generate intelligent summaries, business implications, and hashtags
+- **🧠 AI-Powered Analysis**: Supports multiple AI providers (Gemini 2.5 Flash, Groq, DeepSeek, Hugging Face, OpenAI)
+- **🎯 Intelligent Routing**: Automatically selects the best AI model for each article type
+- **🔗 External Link Extraction**: Detects and displays project links from Reddit posts
 - **🌍 Multi-Language Support**: Automatic Persian translation for non-RSS sources
 - **💾 Smart Caching**: Prevents duplicate analysis with persistent caching
 - **📊 Content Categorization**: Filters articles by category (AI Tool, AI News, etc.)
@@ -36,9 +38,11 @@ src/
 
 - Node.js 18+ and npm
 - Telegram Bot Token ([Get from @BotFather](https://t.me/BotFather))
-- AI API Key (choose one):
-  - Groq API Key (recommended - fast & cheap)
-  - DeepSeek API Key (good alternative)
+- AI API Key (choose one or more for smart routing):
+  - **Google Gemini API Key** (recommended - Gemini 2.5 Flash, 1,500 req/day free)
+  - Groq API Key (fast - 14,400 req/day free)
+  - DeepSeek API Key (great reasoning - $5 free credits)
+  - Hugging Face API Key (30,000 req/month free)
   - OpenAI API Key (premium option)
 
 ### Installation
@@ -62,7 +66,14 @@ src/
    Edit `.env` and add your credentials:
    ```env
    BOT_TOKEN=your_telegram_bot_token
+   
+   # AI Providers (add one or more)
+   GEMINI_API_KEY=your_gemini_api_key  # Recommended
    GROQ_API_KEY=your_groq_api_key
+   
+   # Enable intelligent routing
+   ENABLE_SMART_ROUTING=true
+   
    TELEGRAM_TARGET_CHAT_ID=@your_channel  # Optional
    ```
 
@@ -92,11 +103,51 @@ src/
 | `TELEGRAM_TARGET_CHAT_ID` | - | Channel/chat ID for auto-posting |
 | `TARGET_CATEGORY` | `AI Tool` | Filter articles by category |
 | `AUTO_POSTING_ENABLED` | `false` | Enable automatic posting |
+| `ENABLE_SMART_ROUTING` | `false` | Enable intelligent AI provider selection |
 | `METRICS_PORT` | `3000` | Port for metrics server |
-| `GROQ_MODEL` | `llama-3.1-8b-instant` | Groq model to use |
+| `GEMINI_API_KEY` | - | Google Gemini API key |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model to use |
+| `GROQ_API_KEY` | - | Groq API key |
+| `GROQ_MODEL` | `llama-3.3-70b-versatile` | Groq model to use |
+| `DEEPSEEK_API_KEY` | - | DeepSeek API key |
 | `DEEPSEEK_MODEL` | `deepseek-chat` | DeepSeek model to use |
+| `HUGGINGFACE_API_KEY` | - | Hugging Face API key |
+| `HUGGINGFACE_MODEL` | `meta-llama/Meta-Llama-3-8B-Instruct` | Hugging Face model |
+| `OPENAI_API_KEY` | - | OpenAI API key |
 | `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model to use |
+| `AI_PROVIDER` | - | Force specific provider (overrides smart routing) |
 | `GITHUB_TOKEN` | - | GitHub API token for trending repos |
+
+## 🤖 AI Providers & Smart Routing
+
+### Supported AI Providers
+
+| Provider | Model | Speed | Quality | Free Tier | Best For |
+|----------|-------|-------|---------|-----------|----------|
+| **Google Gemini** | `gemini-2.5-flash` | ⚡⚡⚡⚡ | ⭐⭐⭐⭐⭐ | 1,500 req/day | **Recommended** - Article summarization |
+| **Groq** | `llama-3.3-70b-versatile` | ⚡⚡⚡⚡⚡ | ⭐⭐⭐⭐ | 14,400 req/day | High-volume, fast processing |
+| **DeepSeek** | `deepseek-chat` | ⚡⚡⚡ | ⭐⭐⭐⭐⭐ | $5 credits | Complex reasoning, Reddit posts |
+| **Hugging Face** | `meta-llama/Meta-Llama-3-8B-Instruct` | ⚡⚡⚡ | ⭐⭐⭐ | 30,000 req/month | Backup option |
+| **OpenAI** | `gpt-4o-mini` | ⚡⚡⚡ | ⭐⭐⭐⭐⭐ | Paid | Premium quality |
+
+### Intelligent Routing
+
+When `ENABLE_SMART_ROUTING=true`, the bot automatically selects the best AI provider for each article type:
+
+- **Reddit + External Links** → DeepSeek/Gemini (strong reasoning for synthesis)
+- **Tech News** → Groq/Gemini (speed + accuracy)
+- **AI Tools** → Gemini/Groq (creative descriptions)
+- **Business Cases** → DeepSeek/Gemini (complex analysis)
+- **Developer Content** → DeepSeek/Groq (technical accuracy)
+- **Long Content (>2000 chars)** → Gemini (1M token context window)
+
+### Getting API Keys (All FREE)
+
+1. **Google Gemini**: https://makersuite.google.com/app/apikey
+2. **Groq**: https://console.groq.com/keys
+3. **DeepSeek**: https://platform.deepseek.com/
+4. **Hugging Face**: https://huggingface.co/settings/tokens
+5. **OpenAI**: https://platform.openai.com/api-keys
 
 ## 🎮 Usage
 

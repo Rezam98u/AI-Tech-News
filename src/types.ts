@@ -4,6 +4,9 @@ export interface Article {
 	contentSnippet: string;
 	pubDate: string; // ISO 8601 string
 	imageUrl?: string; // Optional image URL from the article
+	description?: string; // Reddit post body/selftext
+	linkedContent?: string; // Summary of external URL content (for Reddit posts)
+	externalLink?: string; // The actual external URL from Reddit posts
 }
 
 export interface AnalysisResult {

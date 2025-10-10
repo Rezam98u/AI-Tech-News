@@ -1,5 +1,5 @@
 import { Article, AnalysisResult } from '../types';
-import { AIProviderFactory, detectAIProvider, buildEnhancedPrompt } from './providers';
+import { analyzeWithFallback } from './providers';
 import { logger } from '../logger';
 import { sanitizeAnalysisResult } from '../utils/sanitizer';
 
@@ -19,23 +19,19 @@ function coerceResult(obj: any): AnalysisResult {
 	};
 }
 
-export async function analyzeArticle(article: Article): Promise<AnalysisResultWithFallback> {
+export async function analyzeArticle(article: Article, category?: string): Promise<AnalysisResultWithFallback> {
 	try {
-		// Detect and configure AI provider
-		const config = detectAIProvider();
-		logger.info({ provider: config.provider, model: config.model }, 'Using AI provider for analysis');
-		
-		const provider = AIProviderFactory.createProvider(config);
-		const prompt = buildEnhancedPrompt(article);
-		
-		// Analyze with the selected provider
-		const parsed = await provider.analyze(prompt);
+		// Use enhanced fallback analysis with automatic provider switching
+		const parsed = await analyzeWithFallback(article, category, {
+			maxRetries: 2,
+			retryDelay: 1000,
+			timeout: 30000
+		});
 		
 		// Sanitize the result before processing
 		const sanitized = sanitizeAnalysisResult(parsed);
 		
 		logger.info({ 
-			provider: config.provider, 
 			title: article.title,
 			hasDescription: !!sanitized.description,
 			hashtagCount: sanitized.hashtags?.length || 0
@@ -44,7 +40,10 @@ export async function analyzeArticle(article: Article): Promise<AnalysisResultWi
 		return { ...coerceResult(sanitized), isFallback: false };
 		
 	} catch (err) {
-		logger.error({ err: err instanceof Error ? err.message : String(err) }, 'AI analysis failed');
+		logger.error({ 
+			err: err instanceof Error ? err.message : String(err),
+			title: article.title.substring(0, 50)
+		}, 'AI analysis failed - all providers exhausted');
 		
 		// Return fallback analysis
 		return {

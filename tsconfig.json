@@ -42,5 +42,5 @@
     "verbatimModuleSyntax": false
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts", ".tsbuildinfo"]
+  "exclude": ["node_modules", "dist", "**/*.test.ts", ".tsbuildinfo", "src/index-original.ts"]
 }

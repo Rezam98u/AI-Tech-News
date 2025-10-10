@@ -12,7 +12,7 @@ export interface ValidationResult {
 export interface EnvConfig {
 	botToken: string;
 	aiProvider: {
-		name: 'openai' | 'deepseek' | 'groq';
+		name: 'openai' | 'deepseek' | 'groq' | 'gemini' | 'huggingface';
 		apiKey: string;
 		model?: string;
 	};
@@ -21,6 +21,7 @@ export interface EnvConfig {
 	metricsPort: number;
 	autoPostingEnabled: boolean;
 	githubToken?: string;
+	smartRouting?: boolean;
 }
 
 /**
@@ -39,14 +40,18 @@ export function validateEnvironment(): ValidationResult {
 
 	// Validate AI Provider (at least one must be set)
 	const hasGroq = !!process.env.GROQ_API_KEY;
+	const hasGemini = !!process.env.GEMINI_API_KEY;
 	const hasDeepSeek = !!process.env.DEEPSEEK_API_KEY;
+	const hasHuggingFace = !!process.env.HUGGINGFACE_API_KEY;
 	const hasOpenAI = !!process.env.OPENAI_API_KEY;
 
-	if (!hasGroq && !hasDeepSeek && !hasOpenAI) {
+	if (!hasGroq && !hasGemini && !hasDeepSeek && !hasHuggingFace && !hasOpenAI) {
 		errors.push(
 			'No AI provider API key found. Set one of:\n' +
-			'  - GROQ_API_KEY (recommended - fast & cheap)\n' +
-			'  - DEEPSEEK_API_KEY (good alternative)\n' +
+			'  - GROQ_API_KEY (fast & free - 14,400 req/day)\n' +
+			'  - GEMINI_API_KEY (recommended - Google Gemini 2.5 Flash)\n' +
+			'  - DEEPSEEK_API_KEY (great reasoning)\n' +
+			'  - HUGGINGFACE_API_KEY (free - 30,000 req/month)\n' +
 			'  - OPENAI_API_KEY (premium option)'
 		);
 	}
@@ -120,18 +125,28 @@ export function getEnvConfig(): EnvConfig {
 		throw new Error(`Environment validation failed:\n${errorMessage}`);
 	}
 
-	// Determine AI provider
+	// Determine AI provider (priority order)
 	let aiProvider: EnvConfig['aiProvider'];
 	if (process.env.GROQ_API_KEY) {
 		const groqModel = process.env.GROQ_MODEL;
 		aiProvider = groqModel 
 			? { name: 'groq', apiKey: process.env.GROQ_API_KEY, model: groqModel }
 			: { name: 'groq', apiKey: process.env.GROQ_API_KEY };
+	} else if (process.env.GEMINI_API_KEY) {
+		const geminiModel = process.env.GEMINI_MODEL;
+		aiProvider = geminiModel 
+			? { name: 'gemini', apiKey: process.env.GEMINI_API_KEY, model: geminiModel }
+			: { name: 'gemini', apiKey: process.env.GEMINI_API_KEY };
 	} else if (process.env.DEEPSEEK_API_KEY) {
 		const deepseekModel = process.env.DEEPSEEK_MODEL;
 		aiProvider = deepseekModel 
 			? { name: 'deepseek', apiKey: process.env.DEEPSEEK_API_KEY, model: deepseekModel }
 			: { name: 'deepseek', apiKey: process.env.DEEPSEEK_API_KEY };
+	} else if (process.env.HUGGINGFACE_API_KEY) {
+		const hfModel = process.env.HUGGINGFACE_MODEL;
+		aiProvider = hfModel 
+			? { name: 'huggingface', apiKey: process.env.HUGGINGFACE_API_KEY, model: hfModel }
+			: { name: 'huggingface', apiKey: process.env.HUGGINGFACE_API_KEY };
 	} else if (process.env.OPENAI_API_KEY) {
 		const openaiModel = process.env.OPENAI_MODEL;
 		aiProvider = openaiModel 
@@ -147,7 +162,8 @@ export function getEnvConfig(): EnvConfig {
 		aiProvider,
 		targetCategory: process.env.TARGET_CATEGORY || 'AI Tool',
 		metricsPort: Number(process.env.METRICS_PORT) || 3000,
-		autoPostingEnabled: process.env.AUTO_POSTING_ENABLED === 'true'
+		autoPostingEnabled: process.env.AUTO_POSTING_ENABLED === 'true',
+		smartRouting: process.env.ENABLE_SMART_ROUTING === 'true'
 	};
 
 	// Add optional properties only if they exist
@@ -171,6 +187,7 @@ export function printEnvConfig(): void {
 		logger.info({
 			aiProvider: config.aiProvider.name,
 			model: config.aiProvider.model || 'default',
+			smartRouting: config.smartRouting || false,
 			hasTargetChat: !!config.targetChatId,
 			targetCategory: config.targetCategory,
 			metricsPort: config.metricsPort,

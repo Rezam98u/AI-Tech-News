@@ -1,6 +1,3 @@
-/**
- * Bot menu handlers - extracted from main index.ts
- */
 import { Telegraf } from 'telegraf';
 import { createMainMenu, createAdminMenu, createPostingControlMenu, formatCommandsList } from '../utils/menu';
 import { fetchAllArticles } from '../data-aggregator';
@@ -12,13 +9,10 @@ import { getTrendingReposForTelegram } from '../github-api';
 import { getPromptsForTelegramByCategory } from '../prompts';
 import { createEnhancedPost, sendPostWithImage } from '../services/post-service';
 import { enableAutoPosting, disableAutoPosting, toggleAutoPosting, getSchedulerStatus } from './scheduler';
+import { handleRedditBrowseCommand } from '../reddit-browser';
+import { counters } from '../metrics';
 
-/**
- * Register all menu handlers
- */
 export function registerMenuHandlers(bot: Telegraf) {
-
-	// Menu handling
 	bot.hears('📱 Menu', async (ctx) => {
 		await ctx.reply('📱 <b>Main Menu</b>', { 
 			parse_mode: 'HTML',
@@ -79,7 +73,6 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 		});
 	});
 
-	// Category handlers
 	bot.hears('🛠️ AI Tools', async (ctx) => {
 		try {
 			const all = await fetchAllArticles();
@@ -138,6 +131,12 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 				reply_markup: createMainMenu().reply_markup
 			});
 		}
+	});
+
+	// Reddit Browser button handler
+	bot.hears('📱 Browse Reddit', async (ctx) => {
+		counters.commandsHandled.inc({ command: 'reddit_browse_button' });
+		await handleRedditBrowseCommand(ctx);
 	});
 
 	bot.hears('💼 Business', async (ctx) => {
@@ -243,7 +242,8 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 			}
 			
 		const testArticle = articles[0]!;
-		const message = await createEnhancedPost(testArticle);
+		const { createEnhancedPostWithFallback } = await import('../services/post-service');
+		const message = await createEnhancedPostWithFallback(testArticle);
 		if (message) {
 				await sendPostWithImage(ctx.chat.id.toString(), message, testArticle.imageUrl);
 			} else {
@@ -267,7 +267,8 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 					pubDate: new Date().toISOString()
 				};
 			
-			const message = await createEnhancedPost(testEnglishArticle);
+			const { createEnhancedPostWithFallback } = await import('../services/post-service');
+		const message = await createEnhancedPostWithFallback(testEnglishArticle);
 			
 			if (message) {
 				await ctx.reply(message, {
@@ -290,7 +291,6 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 		}
 	});
 
-	// Additional utility handlers
 	bot.hears('📡 Feeds', async (ctx) => {
 		await ctx.reply('Fetching feeds...');
 		try {
@@ -338,20 +338,14 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 			
 			Object.entries(categorized).forEach(([category, categoryArticles]) => {
 				const categoryEmoji = {
-					'AI Tool': '🛠️',
-					'Tech News': '📰',
-					'Business Use-Case': '💼',
-					'Job Opportunity': '🔍',
-					'Sponsored Deal': '💰',
-					'Developer Prompts': '💻'
+					'AI Tool': '🛠️', 'Tech News': '📰', 'Business Use-Case': '💼',
+					'Job Opportunity': '🔍', 'Sponsored Deal': '💰', 'Developer Prompts': '💻'
 				}[category as ContentCategory] || '📋';
-				
 				const percentage = ((categoryArticles.length / articles.length) * 100).toFixed(1);
 				report += `${categoryEmoji} **${category}**\n`;
 				report += `   ${categoryArticles.length} articles (${percentage}%)\n\n`;
 			});
 			
-			// Show category distribution
 			const sortedCategories = Object.entries(categorized)
 				.sort(([,a], [,b]) => b.length - a.length)
 				.slice(0, 3);
@@ -374,7 +368,6 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 		}
 	});
 
-	// Performance monitoring handlers
 	bot.hears('⚡ Performance', async (ctx) => {
 		await ctx.reply('📊 Loading performance statistics...');
 		try {
@@ -383,8 +376,6 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 			const cacheStats = await getAnalysisCacheStats();
 			
 			let report = '⚡ Performance Optimization Status:\n\n';
-			
-			// Analysis Metrics
 			report += '🧠 AI Analysis Performance:\n';
 			report += `📊 Total Requests: ${metrics.totalRequests}\n`;
 			report += `💾 Cache Hits: ${metrics.cacheHits} (${metrics.cacheHitRate.toFixed(1)}%)\n`;
@@ -392,8 +383,6 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 			report += `🌐 API Calls: ${metrics.apiCalls}\n`;
 			report += `⚡ Avg Latency: ${metrics.avgLatency.toFixed(0)}ms\n`;
 			report += `❌ Error Rate: ${metrics.errorRate.toFixed(1)}%\n\n`;
-			
-			// Cache Statistics
 			report += '🗄️ Analysis Cache Stats:\n';
 			report += `💾 Cached Analyses: ${cacheStats.totalCached}\n`;
 			if (cacheStats.oldestEntry) {
@@ -405,14 +394,12 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 				report += `🆕 Newest: ${newestDate.toLocaleDateString()}\n`;
 			}
 			
-			// Performance Benefits
 			report += '\n💰 Cost Savings:\n';
 			const savedCalls = metrics.cacheHits;
-			const estimatedSavings = savedCalls * 0.001; // Rough estimate
+			const estimatedSavings = savedCalls * 0.001;
 			report += `💸 API Calls Saved: ${savedCalls}\n`;
 			report += `💰 Est. Cost Saved: $${estimatedSavings.toFixed(3)}\n\n`;
 			
-			// Optimization Tips
 			if (metrics.cacheHitRate < 50) {
 				report += '💡 Tip: Cache hit rate is low. Consider increasing cache size.\n';
 			} else if (metrics.cacheHitRate > 80) {
@@ -433,10 +420,10 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 		await ctx.reply('🔍 Checking for duplicate articles...');
 		try {
 			const { loadPostedIds } = await import('../storage');
-			const postedIds = await loadPostedIds();
-			
-			const articles = await fetchAllArticles(undefined, { maxAgeHours: 24 * 7 });
-			const newOnes = await filterNewArticles(articles, { maxAgeHours: 24 * 7 });
+		const postedIds = await loadPostedIds();
+		
+		const articles = await fetchAllArticles(undefined, { maxAgeHours: 48 });
+		const newOnes = await filterNewArticles(articles, { maxAgeHours: 48 });
 			
 			let report = '🔍 Duplicate Prevention Status:\n\n';
 			report += `📊 Total Articles Found: ${articles.length}\n`;
@@ -474,9 +461,8 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 		}
 	});
 
-	// Developer prompts and GitHub handlers
 	bot.hears('💻 Dev Prompts DB', async (ctx) => {
-		const message = getPromptsForTelegramByCategory('coding'); // Default to coding category
+		const message = getPromptsForTelegramByCategory('coding');
 		await ctx.reply(message, {
 			reply_markup: createMainMenu().reply_markup
 		});
@@ -531,14 +517,12 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 		});
 	});
 
-	// Posting control menu handler
 	bot.hears('📊 Posting Control', async (ctx) => {
 		await ctx.reply('📊 **Posting Control Panel**\n\nManage automatic posting settings and monitor status:', {
 			reply_markup: createPostingControlMenu().reply_markup
 		});
 	});
 
-	// Admin menu handlers (simplified versions - full implementations are in commands.ts)
 	bot.hears('🔧 Debug Feeds', async (ctx) => {
 		await ctx.reply('Testing each feed individually...');
 		try {
@@ -565,7 +549,6 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 		}
 	});
 
-	// Cache management handlers
 	bot.hears('🧹 Reset Cache', async (ctx) => {
 		await ctx.reply('🧹 Resetting cache files...');
 		try {
@@ -579,7 +562,6 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 			let resetCount = 0;
 			let report = '🧹 **Cache Reset Report**\n\n';
 			
-			// Reset analysis cache
 			if (fs.existsSync(analysisCacheFile)) {
 				try {
 					fs.unlinkSync(analysisCacheFile);
@@ -592,7 +574,6 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 				report += 'ℹ️ Analysis cache already empty\n';
 			}
 			
-			// Reset posted articles
 			if (fs.existsSync(postedFile)) {
 				try {
 					fs.unlinkSync(postedFile);
@@ -676,8 +657,8 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 	bot.hears('⏱️ Scheduler Test', async (ctx) => {
 		await ctx.reply('⏱️ **Scheduler Test**\n\nTesting article scheduling and filtering logic...');
 		try {
-			const articles = await fetchAllArticles(undefined, { maxAgeHours: 24 * 7 });
-			const newOnes = await filterNewArticles(articles, { maxAgeHours: 24 * 7 });
+			const articles = await fetchAllArticles(undefined, { maxAgeHours: 48 });
+			const newOnes = await filterNewArticles(articles, { maxAgeHours: 48 });
 			
 			let report = '⏱️ **Scheduler Test Results:**\n\n';
 			report += `📊 Total articles: ${articles.length}\n`;
@@ -723,7 +704,6 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 				return;
 			}
 			
-			// Test sending a message to the target channel
 			const testMessage = '🧪 <b>Channel Test Message</b>\n\nThis is a test message from the AI Tech News Bot.\n\n✅ Channel posting is working correctly!';
 			
 			await ctx.telegram.sendMessage(targetChatId, testMessage, {
@@ -742,7 +722,6 @@ For detailed commands list, tap <b>Commands List</b> below.`;
 		}
 	});
 
-	// Automatic posting control menu handlers
 	bot.hears('✅ Enable Auto Posting', async (ctx) => {
 		try {
 			enableAutoPosting();

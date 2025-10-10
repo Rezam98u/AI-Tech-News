@@ -9,6 +9,13 @@ import { fetchAllArticles } from '../data-aggregator';
 import { getPostReadyAnalysis, getAnalysisMetrics } from '../ai-analysis/optimized';
 import { getTimeAgo, getSourceDomain } from '../utils/time';
 import { toggleAutoPosting, getSchedulerStatus } from './scheduler';
+import { 
+	handleRedditBrowseCommand,
+	handleRedditConfirm,
+	handleRedditNext,
+	handleRedditSkip,
+	handleRedditCancel
+} from '../reddit-browser';
 
 /**
  * Post creation and sending functions (will be moved to post service later)
@@ -128,7 +135,8 @@ export function registerCommands(bot: Telegraf) {
 			await ctx.reply(headerMessage, { parse_mode: 'HTML' });
 			
 			// Create and send the enhanced post
-			const message = await createEnhancedPost(latestArticle);
+			const { createEnhancedPostWithFallback } = await import('../services/post-service');
+			const message = await createEnhancedPostWithFallback(latestArticle);
 			if (message) {
 				await sendPostWithImage(ctx.chat!.id.toString(), message, latestArticle.imageUrl);
 			} else {
@@ -222,7 +230,8 @@ export function registerCommands(bot: Telegraf) {
 			}
 			
 			const testArticle = articles[0]!;
-			const message = await createEnhancedPost(testArticle);
+			const { createEnhancedPostWithFallback } = await import('../services/post-service');
+		const message = await createEnhancedPostWithFallback(testArticle);
 			if (message) {
 				await sendPostWithImage(ctx.chat.id.toString(), message, testArticle.imageUrl);
 			} else {
@@ -254,7 +263,8 @@ export function registerCommands(bot: Telegraf) {
 			
 		await ctx.reply('🇺🇸 **Testing English Language Post**\n\nGenerating AI-enhanced post in English...');
 		
-		const message = await createEnhancedPost(testEnglishArticle);
+		const { createEnhancedPostWithFallback } = await import('../services/post-service');
+		const message = await createEnhancedPostWithFallback(testEnglishArticle);
 		
 		if (message) {
 				await ctx.reply(message, {
@@ -284,7 +294,9 @@ export function registerCommands(bot: Telegraf) {
 		try {
 			const metrics = getAnalysisMetrics();
 			const { getAnalysisCacheStats } = await import('../storage/analysis-cache');
+			const { getProviderHealthStatus } = await import('../ai-analysis/providers');
 			const cacheStats = await getAnalysisCacheStats();
+			const providerHealth = getProviderHealthStatus();
 			
 			let report = '⚡ Performance Optimization Status:\n\n';
 			
@@ -296,6 +308,15 @@ export function registerCommands(bot: Telegraf) {
 			report += `🌐 API Calls: ${metrics.apiCalls}\n`;
 			report += `⚡ Avg Latency: ${metrics.avgLatency.toFixed(0)}ms\n`;
 			report += `❌ Error Rate: ${metrics.errorRate.toFixed(1)}%\n\n`;
+			
+			// Provider Health Status
+			report += '🤖 AI Provider Health:\n';
+			Object.entries(providerHealth).forEach(([provider, health]) => {
+				const status = health.isHealthy ? '✅' : '❌';
+				const failures = health.failureCount > 0 ? ` (${health.failureCount} failures)` : '';
+				report += `${status} ${provider.toUpperCase()}${failures}\n`;
+			});
+			report += '\n';
 			
 			// Cache Statistics
 			report += '🗄️ Analysis Cache Stats:\n';
@@ -355,6 +376,23 @@ export function registerCommands(bot: Telegraf) {
 			
 		} catch (err) {
 			await ctx.reply(`Failed to clear cache: ${err}`, {
+				reply_markup: createMainMenu().reply_markup
+			});
+		}
+	});
+
+	bot.command('resetproviders', async (ctx) => {
+		counters.commandsHandled.inc({ command: 'resetproviders' });
+		try {
+			const { resetProviderHealth } = await import('../ai-analysis/providers');
+			resetProviderHealth(); // Reset all providers
+			
+			await ctx.reply('✅ **Provider Health Reset!**\n\nAll AI provider health statuses have been reset. Providers will be retried immediately.', {
+				reply_markup: createMainMenu().reply_markup
+			});
+			
+		} catch (err) {
+			await ctx.reply(`Failed to reset provider health: ${err}`, {
 				reply_markup: createMainMenu().reply_markup
 			});
 		}
@@ -725,6 +763,35 @@ export function registerCommands(bot: Telegraf) {
 				reply_markup: createMainMenu().reply_markup
 			});
 		}
+	});
+
+	// Reddit Browser command
+	bot.command('reddit_browse', async (ctx) => {
+		counters.commandsHandled.inc({ command: 'reddit_browse' });
+		await handleRedditBrowseCommand(ctx);
+	});
+
+	// Reddit Browser command alias
+	bot.command('reddit', async (ctx) => {
+		counters.commandsHandled.inc({ command: 'reddit' });
+		await handleRedditBrowseCommand(ctx);
+	});
+
+	// Reddit Browser callback handlers
+	bot.action('reddit_confirm', async (ctx) => {
+		await handleRedditConfirm(ctx);
+	});
+
+	bot.action('reddit_next', async (ctx) => {
+		await handleRedditNext(ctx);
+	});
+
+	bot.action('reddit_skip', async (ctx) => {
+		await handleRedditSkip(ctx);
+	});
+
+	bot.action('reddit_cancel', async (ctx) => {
+		await handleRedditCancel(ctx);
 	});
 
 	bot.command('clearchat', async (ctx) => {

@@ -28,6 +28,7 @@ let metrics: AnalysisMetrics = {
 export async function getOptimizedAnalysis(article: Article, options?: {
 	forceRefresh?: boolean;
 	priority?: 'low' | 'normal' | 'high';
+	category?: string;
 }): Promise<AnalysisResultWithFallback> {
 	const startTime = Date.now();
 	metrics.totalRequests++;
@@ -49,10 +50,11 @@ export async function getOptimizedAnalysis(article: Article, options?: {
 		logger.info({ 
 			title: article.title,
 			priority: options?.priority || 'normal',
+			category: options?.category,
 			forceRefresh: options?.forceRefresh || false
 		}, 'analysis: performing AI analysis');
 		
-		const analysis = await analyzeArticle(article);
+		const analysis = await analyzeArticle(article, options?.category);
 		metrics.apiCalls++;
 		
 		// Cache the result (7 days for regular analysis)
@@ -145,11 +147,12 @@ export async function getBatchAnalysis(
 /**
  * Smart analysis that only analyzes when needed for posting
  */
-export async function getPostReadyAnalysis(article: Article): Promise<AnalysisResultWithFallback> {
-	logger.info({ title: article.title }, 'analysis: preparing article for posting');
+export async function getPostReadyAnalysis(article: Article, category?: string): Promise<AnalysisResultWithFallback> {
+	logger.info({ title: article.title, category }, 'analysis: preparing article for posting');
 	
 	return await getOptimizedAnalysis(article, { 
-		priority: 'high' // High priority for posts being published
+		priority: 'high', // High priority for posts being published
+		...(category && { category })
 	});
 }
 

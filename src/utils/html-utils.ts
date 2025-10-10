@@ -215,6 +215,7 @@ export interface HtmlPostOptions {
 	hashtags?: string[];
 	timeAgo: string;
 	link: string;
+	externalLink?: string;
 	isPersian?: boolean;
 	maxLength?: number;
 }
@@ -222,8 +223,8 @@ export interface HtmlPostOptions {
 export function buildHtmlPost(options: HtmlPostOptions): string {
 	const {
 		tldr, bullets = [], businessImpact, description,
-		hashtags = [], timeAgo, link, isPersian = false,
-		maxLength = LIMITS.SINGLE_POST
+		hashtags = [], timeAgo, link, externalLink,
+		isPersian = false, maxLength = LIMITS.SINGLE_POST
 	} = options;
 	
 	// Build sections with HTML formatting
@@ -252,7 +253,20 @@ export function buildHtmlPost(options: HtmlPostOptions): string {
 		// Use full URL if parsing fails
 	}
 	
-	const footerSection = `\n\n⏰ ${htmlEscape(timeAgo)}\n🔗 <a href="${link}">${htmlEscape(linkDisplay)}</a>`;
+	// Show external link if it exists and is different from main link
+	let externalLinkSection = '';
+	if (externalLink && externalLink !== link) {
+		try {
+			const externalUrl = new URL(externalLink);
+			const externalDomain = externalUrl.hostname.replace(/^www\./, '');
+			externalLinkSection = `\n🔗 <b>Project:</b> <a href="${externalLink}">${htmlEscape(externalDomain)}</a>`;
+		} catch {
+			// If URL parsing fails, show it directly
+			externalLinkSection = `\n🔗 <b>Project:</b> <a href="${externalLink}">${htmlEscape(externalLink)}</a>`;
+		}
+	}
+	
+	const footerSection = `\n\n⏰ ${htmlEscape(timeAgo)}\n🔗 <a href="${link}">${htmlEscape(linkDisplay)}</a>${externalLinkSection}`;
 	
 	// Combine all sections
 	const fullPost = tldrSection + bulletsSection + businessSection + 
