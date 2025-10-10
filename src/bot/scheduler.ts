@@ -330,19 +330,31 @@ export class SchedulerService {
 				'Developer Prompts': '💻'
 			}[targetCategory] || '📋';
 
+			// Determine AI model being used
+			const getAIModel = (): string => {
+				if (process.env.OPENAI_API_KEY) return '🤖 OpenAI (gpt-4o-mini)';
+				if (process.env.DEEPSEEK_API_KEY) return '🤖 DeepSeek';
+				if (process.env.GROQ_API_KEY) return '🤖 Groq (llama-3.1)';
+				if (process.env.GEMINI_API_KEY) return '🤖 Gemini';
+				if (process.env.HUGGINGFACE_API_KEY) return '🤖 HuggingFace';
+				return '🤖 Unknown';
+			};
+
 			const previewHeader = 
 				`┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
 				`┃ 👁️ <b>POST PREVIEW</b> - Review Required\n` +
 				`┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
 				`${categoryEmoji} <b>Category:</b> ${targetCategory}\n` +
-				`🌐 <b>Source:</b> ${sourceDomain}\n` +
+				`📡 <b>Source Website:</b> ${sourceDomain}\n` +
 				`⏰ <b>Published:</b> ${timeAgo}\n` +
+				`${getAIModel()}\n` +
 				`📊 <b>Pending Posts:</b> ${pendingPosts.size}\n` +
 				`━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
 			const fullPreview = previewHeader + message;
 			const previewLength = fullPreview.length;
-			const captionLimit = 1024;
+			// Telegram's caption limit is 1024, use 950 for safety margin
+			const safeLimit = 950;
 
 			const keyboard = Markup.inlineKeyboard([
 				[
@@ -361,31 +373,33 @@ export class SchedulerService {
 
 			if (article.imageUrl) {
 				try {
-					if (previewLength <= captionLimit) {
+					if (previewLength <= safeLimit) {
 						await this.bot.telegram.sendPhoto(adminChatId, article.imageUrl, {
 							caption: fullPreview,
 							parse_mode: 'HTML',
 							...keyboard
 						});
-					} else {
-						const shortCaption = 
-							`┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-							`┃ 👁️ <b>POST PREVIEW</b> - Review Required\n` +
-							`┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-							`${categoryEmoji} ${targetCategory} • 🌐 ${sourceDomain}\n` +
-							`⏰ ${timeAgo} • 📊 ${pendingPosts.size} pending`;
+				} else {
+					// Compact caption to stay well under 1024 char limit
+					const aiModelShort = getAIModel().replace('OpenAI (gpt-4o-mini)', 'OpenAI').replace('Groq (llama-3.1)', 'Groq');
+					const sourceShort = sourceDomain.length > 25 ? sourceDomain.substring(0, 22) + '...' : sourceDomain;
+					
+					const shortCaption = 
+						`👁️ <b>POST PREVIEW</b>\n` +
+						`${categoryEmoji} ${targetCategory} • 📡 ${sourceShort}\n` +
+						`⏰ ${timeAgo} • ${aiModelShort} • 📊 ${pendingPosts.size}`;
 
-						await this.bot.telegram.sendPhoto(adminChatId, article.imageUrl, {
-							caption: shortCaption,
-							parse_mode: 'HTML'
-						});
+					await this.bot.telegram.sendPhoto(adminChatId, article.imageUrl, {
+						caption: shortCaption,
+						parse_mode: 'HTML'
+					});
 
-						await this.bot.telegram.sendMessage(adminChatId, fullPreview, {
-							parse_mode: 'HTML',
-							link_preview_options: { is_disabled: true },
-							...keyboard
-						});
-					}
+					await this.bot.telegram.sendMessage(adminChatId, fullPreview, {
+						parse_mode: 'HTML',
+						link_preview_options: { is_disabled: true },
+						...keyboard
+					});
+				}
 					
 					logger.info({ 
 						postId, 
@@ -393,7 +407,7 @@ export class SchedulerService {
 						adminChatId,
 						previewLength,
 						hasImage: true,
-						splitMessage: previewLength > captionLimit
+						splitMessage: previewLength > safeLimit
 					}, 'Preview sent to admin with image');
 					
 				} catch (err) {

@@ -117,11 +117,30 @@ export async function handleRedditBrowseCommand(ctx: Context): Promise<void> {
 
 			// Send preview (with image if available)
 			if (preview.article.imageUrl) {
-				await ctx.replyWithPhoto(preview.article.imageUrl, {
-					caption: formattedMessage,
-					parse_mode: 'HTML',
-					...keyboard
-				});
+				const captionLimit = 950; // Safe limit for Telegram captions
+				
+				if (formattedMessage.length <= captionLimit) {
+					await ctx.replyWithPhoto(preview.article.imageUrl, {
+						caption: formattedMessage,
+						parse_mode: 'HTML',
+						...keyboard
+					});
+				} else {
+					// Send compact caption with image, then full message separately
+					const compactCaption = 
+						`📱 <b>REDDIT BROWSER</b> ${preview.progress.current}/${preview.progress.total}\n` +
+						`🏷️ r/${preview.subreddit} • 📊 ${preview.progress.posted} posted • ${preview.progress.skipped} skipped`;
+					
+					await ctx.replyWithPhoto(preview.article.imageUrl, {
+						caption: compactCaption,
+						parse_mode: 'HTML'
+					});
+					
+					await ctx.reply(formattedMessage, {
+						parse_mode: 'HTML',
+						...keyboard
+					});
+				}
 			} else {
 				await ctx.reply(formattedMessage, {
 					parse_mode: 'HTML',
@@ -251,11 +270,30 @@ export async function handleRedditConfirm(ctx: Context): Promise<void> {
 			);
 
 			if (nextPreview.article.imageUrl) {
-				await ctx.replyWithPhoto(nextPreview.article.imageUrl, {
-					caption: formattedMessage,
-					parse_mode: 'HTML',
-					...keyboard
-				});
+				const captionLimit = 950; // Safe limit for Telegram captions
+				
+				if (formattedMessage.length <= captionLimit) {
+					await ctx.replyWithPhoto(nextPreview.article.imageUrl, {
+						caption: formattedMessage,
+						parse_mode: 'HTML',
+						...keyboard
+					});
+				} else {
+					// Send compact caption with image, then full message separately
+					const compactCaption = 
+						`📱 <b>REDDIT BROWSER</b> ${nextPreview.progress.current}/${nextPreview.progress.total}\n` +
+						`🏷️ r/${nextPreview.subreddit} • 📊 ${nextPreview.progress.posted} posted • ${nextPreview.progress.skipped} skipped`;
+					
+					await ctx.replyWithPhoto(nextPreview.article.imageUrl, {
+						caption: compactCaption,
+						parse_mode: 'HTML'
+					});
+					
+					await ctx.reply(formattedMessage, {
+						parse_mode: 'HTML',
+						...keyboard
+					});
+				}
 			} else {
 				await ctx.reply(formattedMessage, {
 					parse_mode: 'HTML',
@@ -344,11 +382,30 @@ export async function handleRedditNext(ctx: Context): Promise<void> {
 		);
 
 		if (nextPreview.article.imageUrl) {
-			await ctx.replyWithPhoto(nextPreview.article.imageUrl, {
-				caption: formattedMessage,
-				parse_mode: 'HTML',
-				...keyboard
-			});
+			const captionLimit = 950; // Safe limit for Telegram captions
+			
+			if (formattedMessage.length <= captionLimit) {
+				await ctx.replyWithPhoto(nextPreview.article.imageUrl, {
+					caption: formattedMessage,
+					parse_mode: 'HTML',
+					...keyboard
+				});
+			} else {
+				// Send compact caption with image, then full message separately
+				const compactCaption = 
+					`📱 <b>REDDIT BROWSER</b> ${nextPreview.progress.current}/${nextPreview.progress.total}\n` +
+					`🏷️ r/${nextPreview.subreddit} • 📊 ${nextPreview.progress.posted} posted • ${nextPreview.progress.skipped} skipped`;
+				
+				await ctx.replyWithPhoto(nextPreview.article.imageUrl, {
+					caption: compactCaption,
+					parse_mode: 'HTML'
+				});
+				
+				await ctx.reply(formattedMessage, {
+					parse_mode: 'HTML',
+					...keyboard
+				});
+			}
 		} else {
 			await ctx.reply(formattedMessage, {
 				parse_mode: 'HTML',
@@ -428,11 +485,30 @@ export async function handleRedditSkip(ctx: Context): Promise<void> {
 		);
 
 		if (nextPreview.article.imageUrl) {
-			await ctx.replyWithPhoto(nextPreview.article.imageUrl, {
-				caption: formattedMessage,
-				parse_mode: 'HTML',
-				...keyboard
-			});
+			const captionLimit = 950; // Safe limit for Telegram captions
+			
+			if (formattedMessage.length <= captionLimit) {
+				await ctx.replyWithPhoto(nextPreview.article.imageUrl, {
+					caption: formattedMessage,
+					parse_mode: 'HTML',
+					...keyboard
+				});
+			} else {
+				// Send compact caption with image, then full message separately
+				const compactCaption = 
+					`📱 <b>REDDIT BROWSER</b> ${nextPreview.progress.current}/${nextPreview.progress.total}\n` +
+					`🏷️ r/${nextPreview.subreddit} • 📊 ${nextPreview.progress.posted} posted • ${nextPreview.progress.skipped} skipped`;
+				
+				await ctx.replyWithPhoto(nextPreview.article.imageUrl, {
+					caption: compactCaption,
+					parse_mode: 'HTML'
+				});
+				
+				await ctx.reply(formattedMessage, {
+					parse_mode: 'HTML',
+					...keyboard
+				});
+			}
 		} else {
 			await ctx.reply(formattedMessage, {
 				parse_mode: 'HTML',
