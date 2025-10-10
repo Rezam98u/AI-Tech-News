@@ -291,76 +291,10 @@ Provide a high-level architecture diagram and detailed explanations.`,
 ];
 
 /**
- * Get prompts by category
+ * Get prompts by category (internal helper)
  */
-export function getPromptsByCategory(category: DeveloperPrompt['category']): DeveloperPrompt[] {
+function getPromptsByCategory(category: DeveloperPrompt['category']): DeveloperPrompt[] {
 	return DEVELOPER_PROMPTS.filter(prompt => prompt.category === category);
-}
-
-/**
- * Get prompts by difficulty level
- */
-export function getPromptsByDifficulty(difficulty: DeveloperPrompt['difficulty']): DeveloperPrompt[] {
-	return DEVELOPER_PROMPTS.filter(prompt => prompt.difficulty === difficulty);
-}
-
-/**
- * Search prompts by tags or keywords
- */
-export function searchPrompts(query: string): DeveloperPrompt[] {
-	const lowercaseQuery = query.toLowerCase();
-	return DEVELOPER_PROMPTS.filter(prompt => 
-		prompt.title.toLowerCase().includes(lowercaseQuery) ||
-		prompt.description.toLowerCase().includes(lowercaseQuery) ||
-		prompt.tags.some(tag => tag.toLowerCase().includes(lowercaseQuery)) ||
-		prompt.useCase.toLowerCase().includes(lowercaseQuery)
-	);
-}
-
-/**
- * Get random prompt for daily inspiration
- */
-export function getRandomPrompt(): DeveloperPrompt {
-	const randomIndex = Math.floor(Math.random() * DEVELOPER_PROMPTS.length);
-	return DEVELOPER_PROMPTS[randomIndex]!;
-}
-
-/**
- * Format prompt for Telegram display
- */
-export function formatPromptForTelegram(prompt: DeveloperPrompt, showFullPrompt: boolean = false): string {
-	const difficultyEmoji = {
-		beginner: '🟢',
-		intermediate: '🟡',
-		advanced: '🔴'
-	};
-
-	const categoryEmoji = {
-		coding: '💻',
-		debugging: '🐛',
-		'code-review': '👀',
-		documentation: '📚',
-		testing: '🧪',
-		refactoring: '🔧',
-		architecture: '🏗️'
-	};
-
-	let message = `**${categoryEmoji[prompt.category]} ${prompt.title}**\n`;
-	message += `${difficultyEmoji[prompt.difficulty]} ${prompt.difficulty.toUpperCase()}\n\n`;
-	message += `📝 **Description:** ${prompt.description}\n\n`;
-	message += `🎯 **Use Case:** ${prompt.useCase}\n\n`;
-	message += `🏷️ **Tags:** ${prompt.tags.map(tag => `#${tag}`).join(' ')}\n\n`;
-
-	if (showFullPrompt) {
-		message += `**📋 Ready-to-Copy Prompt:**\n\n`;
-		message += `\`\`\`\n${prompt.prompt}\n\`\`\`\n\n`;
-	} else {
-		message += `**📋 Prompt Preview:**\n`;
-		message += `\`\`\`\n${prompt.prompt.substring(0, 200)}...\n\`\`\`\n\n`;
-		message += `💡 *Use /prompt ${prompt.id} to see the full prompt*`;
-	}
-
-	return message;
 }
 
 /**

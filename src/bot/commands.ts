@@ -113,7 +113,7 @@ export function registerCommands(bot: Telegraf) {
 			
 			// Import the fetch function
 			const { fetchRssFeed } = await import('../data-aggregator');
-			const { createEnhancedPost, sendPostWithImage } = await import('../services/post-service');
+			const { sendPostWithImage } = await import('../services/post-service');
 			
 			// Fetch articles from the specific feed
 			const articles = await fetchRssFeed(feedUrl);
@@ -253,13 +253,12 @@ export function registerCommands(bot: Telegraf) {
 		counters.commandsHandled.inc({ command: 'testenglish' });
 		try {
 			// Create a test English article
-			const testEnglishArticle = {
-				title: 'Meta Unveils Advanced AI Assistant for Businesses',
-				link: 'https://example.com/meta-ai-business',
-				contentSnippet: 'Meta has launched a new AI assistant specifically designed for business applications, featuring advanced natural language processing capabilities and integration with popular business tools. The assistant aims to improve productivity and streamline workflows.',
-				pubDate: new Date().toISOString(),
-				imageUrl: undefined
-			};
+		const testEnglishArticle = {
+			title: 'Meta Unveils Advanced AI Assistant for Businesses',
+			link: 'https://example.com/meta-ai-business',
+			contentSnippet: 'Meta has launched a new AI assistant specifically designed for business applications, featuring advanced natural language processing capabilities and integration with popular business tools. The assistant aims to improve productivity and streamline workflows.',
+			pubDate: new Date().toISOString()
+		};
 			
 		await ctx.reply('🇺🇸 **Testing English Language Post**\n\nGenerating AI-enhanced post in English...');
 		

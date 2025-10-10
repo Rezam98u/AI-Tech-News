@@ -3,8 +3,11 @@
   "version": "1.0.0",
   "main": "dist/index.js",
   "scripts": {
+    "prebuild": "npm run clean",
     "build": "tsc",
+    "prebuild:prod": "npm run clean",
     "build:prod": "tsc --sourceMap false --removeComments true",
+    "prestart": "npm run build:prod",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "clean": "rimraf dist .tsbuildinfo",

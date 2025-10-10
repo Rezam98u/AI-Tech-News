@@ -7,7 +7,7 @@ import { categorizeAllArticles, filterArticlesByCategory, ContentCategory } from
 import { getTimeAgo, getSourceDomain } from '../utils/time';
 import { getTrendingReposForTelegram } from '../github-api';
 import { getPromptsForTelegramByCategory } from '../prompts';
-import { createEnhancedPost, sendPostWithImage } from '../services/post-service';
+import { sendPostWithImage } from '../services/post-service';
 import { enableAutoPosting, disableAutoPosting, toggleAutoPosting, getSchedulerStatus } from './scheduler';
 import { handleRedditBrowseCommand } from '../reddit-browser';
 import { counters } from '../metrics';

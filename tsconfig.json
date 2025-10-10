@@ -16,7 +16,7 @@
     "tsBuildInfoFile": ".tsbuildinfo",
     
     // Production optimizations (can be overridden in build scripts)
-    "sourceMap": true,
+    "sourceMap": false,
     "declaration": false,
     "declarationMap": false,
     "removeComments": true,
@@ -42,5 +42,5 @@
     "verbatimModuleSyntax": false
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts", ".tsbuildinfo", "src/index-original.ts"]
+  "exclude": ["node_modules", "dist", "**/*.test.ts", ".tsbuildinfo"]
 }
