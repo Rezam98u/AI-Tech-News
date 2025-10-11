@@ -95,43 +95,76 @@ async function startBot(): Promise<void> {
 				}
 			);
 			
-			// Show the last fetched article
-			try {
-				const { fetchAllArticles } = await import('./data-aggregator');
-				const { formatDistanceToNow } = await import('./utils/time');
+		// Fetch article from a random RSS feed
+		try {
+			const { DEFAULT_FEEDS, fetchRssFeed } = await import('./data-aggregator');
+			const { getSourceDomain } = await import('./utils/time');
+			
+			// Show loading message
+			const loadingMsg = await ctx.reply(
+				'🔄 <b>Fetching fresh article...</b>\n\n⏳ Please wait...',
+				{ parse_mode: 'HTML' }
+			);
+			
+			// Randomly select one RSS feed
+			const randomFeed = DEFAULT_FEEDS[Math.floor(Math.random() * DEFAULT_FEEDS.length)]!;
+			const sourceName = getSourceDomain(randomFeed);
+			
+			logger.info({ feed: randomFeed, source: sourceName }, 'Fetching article from random feed for /start command');
+			
+			// Fetch articles from the selected feed
+			const articles = await fetchRssFeed(randomFeed);
+			
+			// Delete loading message
+			await ctx.deleteMessage(loadingMsg.message_id).catch(() => {});
+			
+			if (articles.length > 0) {
+				// Pick a random article from the fetched ones
+				const randomArticle = articles[Math.floor(Math.random() * articles.length)]!;
 				
-				// Fetch recent articles and get the most recent one
-				const articles = await fetchAllArticles(undefined, { maxAgeHours: 24 });
+				const headerMessage = 
+					`📰 <b>Random Article from ${sourceName}</b>\n` +
+					`🎲 Selected from ${articles.length} available article${articles.length === 1 ? '' : 's'}`;
 				
-				if (articles.length > 0) {
-					const latestArticle = articles[0]!; // Already sorted by newest first
-					const timeSinceFetch = formatDistanceToNow(new Date(latestArticle.pubDate));
-					const headerMessage = `📰 <b>Latest Fetched Article</b> (${timeSinceFetch} ago):`;
-					
 				await ctx.reply(headerMessage, { parse_mode: 'HTML' });
 				
 				const { createEnhancedPostWithFallback, sendPostWithImage } = await import('./services/post-service');
-				const message = await createEnhancedPostWithFallback(latestArticle);
+				const message = await createEnhancedPostWithFallback(randomArticle);
+				
 				if (message) {
-						await sendPostWithImage(ctx.chat.id.toString(), message, latestArticle.imageUrl);
-					} else {
-						await ctx.reply(`❌ <b>Unable to Analyze Article</b>\n\n<b>Article:</b> ${latestArticle.title}\n\n<b>Possible reasons:</b>\n• Article may not be AI/tech related\n• AI provider may be experiencing issues\n• Article content may be too short or unclear\n\n<i>Try using /fetchfeed to get articles from a specific source.</i>`, {
-							parse_mode: 'HTML'
-						});
-					}
+					await sendPostWithImage(ctx.chat.id.toString(), message, randomArticle.imageUrl);
 				} else {
-					await ctx.reply('📰 <b>No recent articles have been fetched yet.</b>', { 
+					await ctx.reply(
+						`❌ <b>Unable to Analyze Article</b>\n\n` +
+						`<b>Article:</b> ${randomArticle.title}\n\n` +
+						`<b>Possible reasons:</b>\n` +
+						`• Article may not be AI/tech related\n` +
+						`• AI provider may be experiencing issues\n` +
+						`• Article content may be too short or unclear\n\n` +
+						`<i>Try /start again for a different article!</i>`,
+						{ parse_mode: 'HTML' }
+					);
+				}
+			} else {
+				await ctx.reply(
+					`😕 <b>No Articles Found</b>\n\n` +
+					`Could not fetch articles from <b>${sourceName}</b>.\n\n` +
+					`<i>Try /start again or use the menu below.</i>`,
+					{ 
 						parse_mode: 'HTML',
 						link_preview_options: { is_disabled: true } 
-					});
-				}
-				
-			} catch (err) {
-				logger.error({ err }, 'Failed to show latest fetched article in start command');
-				await ctx.reply('📰 <b>Unable to retrieve latest fetched article.</b>', { 
-					parse_mode: 'HTML' 
-				});
+					}
+				);
 			}
+			
+		} catch (err) {
+			logger.error({ err }, 'Failed to fetch random article in start command');
+			await ctx.reply(
+				'❌ <b>Error Fetching Article</b>\n\n' +
+				'Something went wrong while fetching a random article. Please try again!',
+				{ parse_mode: 'HTML' }
+			);
+		}
 		}));
 		
 		// Register all command handlers
