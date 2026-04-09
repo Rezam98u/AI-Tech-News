@@ -20,7 +20,6 @@ export interface EnvConfig {
 	targetCategory: string;
 	metricsPort: number;
 	autoPostingEnabled: boolean;
-	githubToken?: string;
 	smartRouting?: boolean;
 }
 
@@ -170,9 +169,6 @@ export function getEnvConfig(): EnvConfig {
 	if (process.env.TELEGRAM_TARGET_CHAT_ID) {
 		config.targetChatId = process.env.TELEGRAM_TARGET_CHAT_ID;
 	}
-	if (process.env.GITHUB_TOKEN) {
-		config.githubToken = process.env.GITHUB_TOKEN;
-	}
 
 	return config;
 }
@@ -191,8 +187,7 @@ export function printEnvConfig(): void {
 			hasTargetChat: !!config.targetChatId,
 			targetCategory: config.targetCategory,
 			metricsPort: config.metricsPort,
-			autoPostingEnabled: config.autoPostingEnabled,
-			hasGithubToken: !!config.githubToken
+			autoPostingEnabled: config.autoPostingEnabled
 		}, 'Environment configuration loaded successfully');
 	} catch (err) {
 		// Error already logged in getEnvConfig

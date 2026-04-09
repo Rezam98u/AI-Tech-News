@@ -6,6 +6,8 @@ import { Context, Markup } from 'telegraf';
 import { logger } from '../logger';
 import { redditBrowser } from './service';
 import { getEnabledRedditFeeds } from './config';
+import type { RedditArticlePreview } from './types';
+import { createEnhancedPostWithFallback, sendPostWithImage } from '../services/post-service';
 
 /**
  * Create inline keyboard for Reddit browser preview
@@ -50,6 +52,51 @@ function formatPreviewMessage(
 		`━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
 	return header + message;
+}
+
+/** Telegram caption limit is 1024; stay under for safety */
+const TELEGRAM_CAPTION_SAFE = 950;
+
+function photoInput(image: string | Buffer): string | { source: Buffer } {
+	return Buffer.isBuffer(image) ? { source: image } : image;
+}
+
+function compactPhotoCaption(preview: RedditArticlePreview): string {
+	return (
+		`📱 <b>REDDIT BROWSER</b> ${preview.progress.current}/${preview.progress.total}\n` +
+		`🏷️ r/${preview.subreddit} • 📊 ${preview.progress.posted} posted • ${preview.progress.skipped} skipped`
+	);
+}
+
+async function sendRedditPreview(ctx: Context, preview: RedditArticlePreview): Promise<void> {
+	const formattedMessage = formatPreviewMessage(
+		preview.formattedMessage,
+		preview.subreddit,
+		preview.progress
+	);
+	const keyboard = createBrowserKeyboard(preview.nextSubreddit);
+	const image = preview.article.generatedImageBuffer || preview.article.imageUrl;
+
+	if (!image) {
+		await ctx.reply(formattedMessage, { parse_mode: 'HTML', ...keyboard });
+		return;
+	}
+
+	const input = photoInput(image);
+	if (formattedMessage.length <= TELEGRAM_CAPTION_SAFE) {
+		await ctx.replyWithPhoto(input, {
+			caption: formattedMessage,
+			parse_mode: 'HTML',
+			...keyboard
+		});
+		return;
+	}
+
+	await ctx.replyWithPhoto(input, {
+		caption: compactPhotoCaption(preview),
+		parse_mode: 'HTML'
+	});
+	await ctx.reply(formattedMessage, { parse_mode: 'HTML', ...keyboard });
 }
 
 /**
@@ -104,49 +151,7 @@ export async function handleRedditBrowseCommand(ctx: Context): Promise<void> {
 				return;
 			}
 
-			// Send preview with buttons
-			const formattedMessage = formatPreviewMessage(
-				preview.formattedMessage,
-				preview.subreddit,
-				preview.progress
-			);
-
-			const keyboard = createBrowserKeyboard(
-				preview.nextSubreddit
-			);
-
-			// Send preview (with image if available)
-			if (preview.article.imageUrl) {
-				const captionLimit = 950; // Safe limit for Telegram captions
-				
-				if (formattedMessage.length <= captionLimit) {
-					await ctx.replyWithPhoto(preview.article.imageUrl, {
-						caption: formattedMessage,
-						parse_mode: 'HTML',
-						...keyboard
-					});
-				} else {
-					// Send compact caption with image, then full message separately
-					const compactCaption = 
-						`📱 <b>REDDIT BROWSER</b> ${preview.progress.current}/${preview.progress.total}\n` +
-						`🏷️ r/${preview.subreddit} • 📊 ${preview.progress.posted} posted • ${preview.progress.skipped} skipped`;
-					
-					await ctx.replyWithPhoto(preview.article.imageUrl, {
-						caption: compactCaption,
-						parse_mode: 'HTML'
-					});
-					
-					await ctx.reply(formattedMessage, {
-						parse_mode: 'HTML',
-						...keyboard
-					});
-				}
-			} else {
-				await ctx.reply(formattedMessage, {
-					parse_mode: 'HTML',
-					...keyboard
-				});
-			}
+			await sendRedditPreview(ctx, preview);
 
 		} catch (err) {
 			// Delete loading message
@@ -190,45 +195,32 @@ export async function handleRedditConfirm(ctx: Context): Promise<void> {
 			return;
 		}
 
-		const articleLink = session.currentArticle.link;
+	const article = session.currentArticle;
+	const articleLink = article.link;
 
-		// Get target channel
-		const targetChat = process.env.TELEGRAM_TARGET_CHAT_ID;
-		if (!targetChat) {
-			await ctx.reply('❌ Target channel not configured.');
+	// Get target channel
+	const targetChat = process.env.TELEGRAM_TARGET_CHAT_ID;
+	if (!targetChat) {
+		await ctx.reply('❌ Target channel not configured.');
+		return;
+	}
+
+	try {
+		const postContent = await createEnhancedPostWithFallback(article);
+
+		if (!postContent) {
+			await ctx.reply('❌ Failed to create post content.');
 			return;
 		}
 
-		// We need to re-fetch the article details from the message
-		// For now, we'll use a workaround: extract from the current message
-		const message = (ctx as any).callbackQuery?.message;
-		if (!message) {
-			await ctx.reply('❌ Could not get message details.');
-			return;
-		}
+		// Use generated image buffer if available, otherwise use imageUrl
+		const imageToSend = article.generatedImageBuffer || article.imageUrl;
 
-		try {
-			// Extract the message content
-			const messageText = message.caption || message.text || '';
-			const imageUrl = message.photo ? message.photo[message.photo.length - 1]?.file_id : undefined;
+		// Post to channel using the proper service that handles links correctly
+		await sendPostWithImage(targetChat, postContent, imageToSend);
 
-			// Remove the Reddit browser header to get the actual post content
-			const postContent = messageText.split('━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n').slice(1).join('\n\n');
-
-			// Post to channel
-			if (imageUrl) {
-				await ctx.telegram.sendPhoto(targetChat, imageUrl, {
-					caption: postContent,
-					parse_mode: 'HTML'
-				});
-			} else {
-				await ctx.telegram.sendMessage(targetChat, postContent, {
-					parse_mode: 'HTML'
-				});
-			}
-
-			// Mark as posted in session
-			await redditBrowser.confirmPost(userId, articleLink);
+		// Mark as posted in session
+		await redditBrowser.confirmPost(userId, articleLink);
 
 			// Delete the preview message
 			try {
@@ -258,48 +250,7 @@ export async function handleRedditConfirm(ctx: Context): Promise<void> {
 				return;
 			}
 
-			// Send next preview
-			const formattedMessage = formatPreviewMessage(
-				nextPreview.formattedMessage,
-				nextPreview.subreddit,
-				nextPreview.progress
-			);
-
-			const keyboard = createBrowserKeyboard(
-				nextPreview.nextSubreddit
-			);
-
-			if (nextPreview.article.imageUrl) {
-				const captionLimit = 950; // Safe limit for Telegram captions
-				
-				if (formattedMessage.length <= captionLimit) {
-					await ctx.replyWithPhoto(nextPreview.article.imageUrl, {
-						caption: formattedMessage,
-						parse_mode: 'HTML',
-						...keyboard
-					});
-				} else {
-					// Send compact caption with image, then full message separately
-					const compactCaption = 
-						`📱 <b>REDDIT BROWSER</b> ${nextPreview.progress.current}/${nextPreview.progress.total}\n` +
-						`🏷️ r/${nextPreview.subreddit} • 📊 ${nextPreview.progress.posted} posted • ${nextPreview.progress.skipped} skipped`;
-					
-					await ctx.replyWithPhoto(nextPreview.article.imageUrl, {
-						caption: compactCaption,
-						parse_mode: 'HTML'
-					});
-					
-					await ctx.reply(formattedMessage, {
-						parse_mode: 'HTML',
-						...keyboard
-					});
-				}
-			} else {
-				await ctx.reply(formattedMessage, {
-					parse_mode: 'HTML',
-					...keyboard
-				});
-			}
+			await sendRedditPreview(ctx, nextPreview);
 
 		} catch (postErr) {
 			logger.error({ 
@@ -370,48 +321,7 @@ export async function handleRedditNext(ctx: Context): Promise<void> {
 			return;
 		}
 
-		// Send next preview
-		const formattedMessage = formatPreviewMessage(
-			nextPreview.formattedMessage,
-			nextPreview.subreddit,
-			nextPreview.progress
-		);
-
-		const keyboard = createBrowserKeyboard(
-			nextPreview.nextSubreddit
-		);
-
-		if (nextPreview.article.imageUrl) {
-			const captionLimit = 950; // Safe limit for Telegram captions
-			
-			if (formattedMessage.length <= captionLimit) {
-				await ctx.replyWithPhoto(nextPreview.article.imageUrl, {
-					caption: formattedMessage,
-					parse_mode: 'HTML',
-					...keyboard
-				});
-			} else {
-				// Send compact caption with image, then full message separately
-				const compactCaption = 
-					`📱 <b>REDDIT BROWSER</b> ${nextPreview.progress.current}/${nextPreview.progress.total}\n` +
-					`🏷️ r/${nextPreview.subreddit} • 📊 ${nextPreview.progress.posted} posted • ${nextPreview.progress.skipped} skipped`;
-				
-				await ctx.replyWithPhoto(nextPreview.article.imageUrl, {
-					caption: compactCaption,
-					parse_mode: 'HTML'
-				});
-				
-				await ctx.reply(formattedMessage, {
-					parse_mode: 'HTML',
-					...keyboard
-				});
-			}
-		} else {
-			await ctx.reply(formattedMessage, {
-				parse_mode: 'HTML',
-				...keyboard
-			});
-		}
+		await sendRedditPreview(ctx, nextPreview);
 
 	} catch (err) {
 		logger.error({ 
@@ -473,48 +383,7 @@ export async function handleRedditSkip(ctx: Context): Promise<void> {
 			return;
 		}
 
-		// Send next preview
-		const formattedMessage = formatPreviewMessage(
-			nextPreview.formattedMessage,
-			nextPreview.subreddit,
-			nextPreview.progress
-		);
-
-		const keyboard = createBrowserKeyboard(
-			nextPreview.nextSubreddit
-		);
-
-		if (nextPreview.article.imageUrl) {
-			const captionLimit = 950; // Safe limit for Telegram captions
-			
-			if (formattedMessage.length <= captionLimit) {
-				await ctx.replyWithPhoto(nextPreview.article.imageUrl, {
-					caption: formattedMessage,
-					parse_mode: 'HTML',
-					...keyboard
-				});
-			} else {
-				// Send compact caption with image, then full message separately
-				const compactCaption = 
-					`📱 <b>REDDIT BROWSER</b> ${nextPreview.progress.current}/${nextPreview.progress.total}\n` +
-					`🏷️ r/${nextPreview.subreddit} • 📊 ${nextPreview.progress.posted} posted • ${nextPreview.progress.skipped} skipped`;
-				
-				await ctx.replyWithPhoto(nextPreview.article.imageUrl, {
-					caption: compactCaption,
-					parse_mode: 'HTML'
-				});
-				
-				await ctx.reply(formattedMessage, {
-					parse_mode: 'HTML',
-					...keyboard
-				});
-			}
-		} else {
-			await ctx.reply(formattedMessage, {
-				parse_mode: 'HTML',
-				...keyboard
-			});
-		}
+		await sendRedditPreview(ctx, nextPreview);
 
 	} catch (err) {
 		logger.error({ 

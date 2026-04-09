@@ -15,6 +15,8 @@ import {
 import { fetchSingleRedditFeed } from '../data-aggregator';
 import { markArticlesPosted } from '../storage';
 import { counters } from '../metrics';
+import { getOrCreateImage } from '../services/image-service';
+import { createEnhancedPostWithFallback } from '../services/post-service';
 
 export class RedditBrowserService {
 	private sessions: Map<number, RedditBrowsingSession> = new Map();
@@ -139,22 +141,33 @@ export class RedditBrowserService {
 				return await this.getNextArticle(userId);
 			}
 
-			// Get the first (top) article
-			const article = availableArticles[0];
-			if (!article) {
-				logger.warn({ 
-					userId, 
-					subreddit: currentFeed.name 
-				}, 'No article available after filtering, moving to next');
-				
-				session.visitedSubreddits.add(currentFeed.name);
-				session.currentIndex++;
-				return await this.getNextArticle(userId);
-			}
+		// Get the first (top) article
+		const article = availableArticles[0];
+		if (!article) {
+			logger.warn({ 
+				userId, 
+				subreddit: currentFeed.name 
+			}, 'No article available after filtering, moving to next');
 			
-			// Create enhanced post with fallback retry logic
-			const { createEnhancedPostWithFallback } = await import('../services/post-service');
-			const message = await createEnhancedPostWithFallback(article);
+			session.visitedSubreddits.add(currentFeed.name);
+			session.currentIndex++;
+			return await this.getNextArticle(userId);
+		}
+		
+		const imageResult = await getOrCreateImage(article);
+		
+		// Update article with new image if generated
+		if (imageResult.imageBuffer) {
+			// For generated images, we need to upload them to Telegram first
+			// For now, we'll keep the buffer and handle it in the handler
+			article.generatedImageBuffer = imageResult.imageBuffer;
+			article.isGeneratedImage = true;
+		} else if (imageResult.imageUrl && !article.imageUrl) {
+			// Use fetched OG image
+			article.imageUrl = imageResult.imageUrl;
+		}
+		
+		const message = await createEnhancedPostWithFallback(article);
 			
 			if (!message) {
 				logger.warn({ 

@@ -284,170 +284,23 @@ REQUIREMENTS:
 }
 
 /**
- * Provider health tracking
+ * Providers to try, in order, when the matching API key is set (MVP: one chain for all content).
  */
-interface ProviderHealth {
-	provider: AIProvider;
-	lastFailure?: number;
-	failureCount: number;
-	isHealthy: boolean;
-	lastSuccess?: number;
-}
+function getConfiguredProviders(): AIProviderConfig[] {
+	const out: AIProviderConfig[] = [];
 
-const providerHealth: Map<AIProvider, ProviderHealth> = new Map();
-
-/**
- * Initialize provider health tracking
- */
-function initializeProviderHealth(): void {
-	const providers: AIProvider[] = ['groq', 'gemini', 'deepseek', 'openai'];
-	providers.forEach((provider) => {
-		providerHealth.set(provider, {
-			provider,
-			failureCount: 0,
-			isHealthy: true,
-		});
-	});
-}
-
-/**
- * Track provider failure
- */
-function trackProviderFailure(provider: AIProvider, _error: Error): void {
-	const health = providerHealth.get(provider);
-	if (health) {
-		health.lastFailure = Date.now();
-		health.failureCount++;
-
-		// Mark as unhealthy if too many failures
-		if (health.failureCount >= 3) {
-			health.isHealthy = false;
+	const add = (provider: AIProvider, apiKey: string | undefined, model: string) => {
+		if (apiKey) {
+			out.push({ provider, apiKey, model });
 		}
-	}
-}
-
-/**
- * Track provider success
- */
-function trackProviderSuccess(provider: AIProvider): void {
-	const health = providerHealth.get(provider);
-	if (health) {
-		health.lastSuccess = Date.now();
-		health.failureCount = 0;
-		health.isHealthy = true;
-	}
-}
-
-/**
- * Check if provider should be retried (after cooldown period)
- */
-function shouldRetryProvider(provider: AIProvider): boolean {
-	const health = providerHealth.get(provider);
-	if (!health) return true;
-
-	// If healthy, always retry
-	if (health.isHealthy) return true;
-
-	// If unhealthy, check cooldown period (5 minutes)
-	const cooldownPeriod = 5 * 60 * 1000; // 5 minutes
-	const timeSinceFailure = health.lastFailure ? Date.now() - health.lastFailure : Infinity;
-
-	return timeSinceFailure > cooldownPeriod;
-}
-
-/**
- * Get available providers in order of preference
- */
-function getAvailableProviders(article: Article, category?: string): AIProviderConfig[] {
-	const isReddit = isRedditPost(article);
-	const contentLength =
-		(article.contentSnippet?.length || 0) +
-		(article.description?.length || 0) +
-		(article.linkedContent?.length || 0);
-
-	// Provider strengths for different scenarios
-	const providerPreferences: Record<string, AIProvider[]> = {
-		'reddit-with-content': ['groq', 'gemini', 'deepseek', 'openai'],
-		'tech-news': ['groq', 'gemini', 'deepseek', 'openai'],
-		'ai-tool': ['gemini', 'groq', 'deepseek', 'openai'],
-		business: ['deepseek', 'gemini', 'groq', 'openai'],
-		developer: ['deepseek', 'groq', 'gemini', 'openai'],
-		'long-content': ['gemini', 'deepseek', 'groq', 'openai'],
-		default: ['groq', 'gemini', 'deepseek', 'openai'],
 	};
 
-	// Determine scenario
-	let scenario: string;
+	add('groq', process.env.GROQ_API_KEY, process.env.GROQ_MODEL || 'llama-3.3-70b-versatile');
+	add('gemini', process.env.GEMINI_API_KEY, process.env.GEMINI_MODEL || 'gemini-2.0-flash-exp');
+	add('deepseek', process.env.DEEPSEEK_API_KEY, process.env.DEEPSEEK_MODEL || 'deepseek-chat');
+	add('openai', process.env.OPENAI_API_KEY, process.env.OPENAI_MODEL || 'gpt-4o-mini');
 
-	if (isReddit && (article.linkedContent || article.description)) {
-		scenario = 'reddit-with-content';
-	} else if (contentLength > 2000) {
-		scenario = 'long-content';
-	} else if (category) {
-		switch (category.toLowerCase()) {
-			case 'tech news':
-				scenario = 'tech-news';
-				break;
-			case 'ai tool':
-				scenario = 'ai-tool';
-				break;
-			case 'business use-case':
-				scenario = 'business';
-				break;
-			case 'developer prompts':
-				scenario = 'developer';
-				break;
-			default:
-				scenario = 'default';
-		}
-	} else {
-		scenario = 'default';
-	}
-
-	// Get preferences for this scenario
-	const preferences = providerPreferences[scenario] || providerPreferences['default'] || [];
-
-	// Filter to only available and healthy providers
-	const availableProviders: AIProviderConfig[] = [];
-
-	for (const provider of preferences) {
-		// Check if provider should be retried
-		if (!shouldRetryProvider(provider)) {
-			continue;
-		}
-
-		let apiKey: string | undefined;
-		let model: string | undefined;
-
-		switch (provider) {
-			case 'groq':
-				apiKey = process.env.GROQ_API_KEY;
-				model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
-				break;
-			case 'gemini':
-				apiKey = process.env.GEMINI_API_KEY;
-				model = process.env.GEMINI_MODEL || 'gemini-2.0-flash-exp';
-				break;
-			case 'deepseek':
-				apiKey = process.env.DEEPSEEK_API_KEY;
-				model = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
-				break;
-			case 'openai':
-				apiKey = process.env.OPENAI_API_KEY;
-				model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-				break;
-		}
-
-		if (apiKey) {
-			const providerConfig: AIProviderConfig = { provider, apiKey };
-			if (model) {
-				providerConfig.model = model;
-			}
-			availableProviders.push(providerConfig);
-		}
-	}
-
-	return availableProviders;
+	return out;
 }
 
 /**
@@ -491,21 +344,18 @@ async function analyzeWithProvider(
  */
 export async function analyzeWithFallback(
 	article: Article,
-	category?: string,
+	_category?: string,
 	options?: {
 		maxRetries?: number;
 		retryDelay?: number;
 		timeout?: number;
 	}
 ): Promise<AnalysisResultType> {
-	const maxRetries = options?.maxRetries || 3;
-	const retryDelay = options?.retryDelay || 1000;
-	const timeout = options?.timeout || 30000;
+	const maxRetries = options?.maxRetries ?? 2;
+	const retryDelay = options?.retryDelay ?? 1000;
+	const timeout = options?.timeout ?? 30000;
 
-	// Initialize provider health tracking
-	initializeProviderHealth();
-
-	const providers = getAvailableProviders(article, category);
+	const providers = getConfiguredProviders();
 
 	if (providers.length === 0) {
 		throw new Error('No AI providers available. Please check your API keys.');
@@ -529,9 +379,6 @@ export async function analyzeWithFallback(
 
 				const result = await analyzeWithProvider(providerConfig, prompt, timeout);
 
-				// Track successful analysis
-				trackProviderSuccess(providerConfig.provider);
-
 				logger.info(
 					{
 						provider: providerConfig.provider,
@@ -546,39 +393,18 @@ export async function analyzeWithFallback(
 				const error = err instanceof Error ? err : new Error(String(err));
 				lastError = error;
 
-				// Check if it's a quota/rate limit error
-				const isQuotaError =
-					error.message.includes('402') ||
-					error.message.includes('quota') ||
-					error.message.includes('rate limit') ||
-					error.message.includes('429') ||
-					error.message.includes('insufficient_quota');
-
-				// Track provider failure
-				trackProviderFailure(providerConfig.provider, error);
-
 				logger.warn(
 					{
 						provider: providerConfig.provider,
 						error: error.message,
-						isQuotaError,
 						attempt: attempt + 1,
 						title: article.title.substring(0, 50),
 					},
 					'AI provider failed, trying next provider (LangChain)'
 				);
-
-				// If it's a quota error, don't retry this provider immediately
-				if (isQuotaError) {
-					continue; // Try next provider
-				}
-
-				// For other errors, continue to next provider
-				continue;
 			}
 		}
 
-		// If we've tried all providers and still failed, wait before retry
 		if (attempt < maxRetries - 1) {
 			logger.info(
 				{
@@ -594,7 +420,6 @@ export async function analyzeWithFallback(
 		}
 	}
 
-	// All providers failed
 	logger.error(
 		{
 			title: article.title.substring(0, 50),
@@ -605,35 +430,5 @@ export async function analyzeWithFallback(
 	);
 
 	throw new Error(`All AI providers failed: ${lastError?.message || 'Unknown error'}`);
-}
-
-/**
- * Get provider health status for monitoring
- */
-export function getProviderHealthStatus(): Record<AIProvider, ProviderHealth> {
-	const status: Record<AIProvider, ProviderHealth> = {} as any;
-
-	for (const [provider, health] of providerHealth.entries()) {
-		status[provider] = { ...health };
-	}
-
-	return status;
-}
-
-/**
- * Reset provider health (useful for testing or manual recovery)
- */
-export function resetProviderHealth(provider?: AIProvider): void {
-	if (provider) {
-		const health = providerHealth.get(provider);
-		if (health) {
-			health.failureCount = 0;
-			health.isHealthy = true;
-			delete health.lastFailure;
-		}
-	} else {
-		// Reset all providers
-		initializeProviderHealth();
-	}
 }
 

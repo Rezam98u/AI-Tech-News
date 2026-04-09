@@ -6,29 +6,37 @@ import { logger } from '../logger';
 import { counters } from '../metrics';
 import { createMainMenu } from '../utils/menu';
 import { fetchAllArticles } from '../data-aggregator';
-import { getPostReadyAnalysis, getAnalysisMetrics } from '../ai-analysis/optimized';
+import { getPostReadyAnalysis } from '../ai-analysis/optimized';
 import { getTimeAgo, getSourceDomain } from '../utils/time';
 import { toggleAutoPosting, getSchedulerStatus } from './scheduler';
-import { 
+import { sendTechNewsReport, sendFeedsReport, sendCategoriesReport } from './menu-actions';
+import {
 	handleRedditBrowseCommand,
 	handleRedditConfirm,
 	handleRedditNext,
 	handleRedditSkip,
-	handleRedditCancel
+	handleRedditCancel,
 } from '../reddit-browser';
-
-/**
- * Post creation and sending functions (will be moved to post service later)
- */
-declare function createEnhancedPost(article: any): Promise<string | null>;
-declare function sendPostWithImage(chatId: string, message: string, imageUrl?: string): Promise<void>;
-declare function shortenLink(url: string, maxLength?: number): string;
 
 /**
  * Register all bot commands
  */
 export function registerCommands(bot: Telegraf) {
-	
+	bot.command('technews', async (ctx) => {
+		counters.commandsHandled.inc({ command: 'technews' });
+		await sendTechNewsReport(ctx);
+	});
+
+	bot.command('feeds', async (ctx) => {
+		counters.commandsHandled.inc({ command: 'feeds' });
+		await sendFeedsReport(ctx);
+	});
+
+	bot.command('categories', async (ctx) => {
+		counters.commandsHandled.inc({ command: 'categories' });
+		await sendCategoriesReport(ctx);
+	});
+
 	bot.command('fetchfeed', async (ctx) => {
 		counters.commandsHandled.inc({ command: 'fetchfeed' });
 		try {
@@ -175,8 +183,7 @@ export function registerCommands(bot: Telegraf) {
 			
 			const article = articles[0]!;
 			const analysis = await getPostReadyAnalysis(article);
-			const metrics = getAnalysisMetrics();
-			
+
 			let report = `🧠 **AI Analysis Result:**\n\n`;
 			report += `📰 **Article:** ${article.title}\n`;
 			report += `🌐 **Source:** ${getSourceDomain(article.link)}\n`;
@@ -202,12 +209,7 @@ export function registerCommands(bot: Telegraf) {
 			if (analysis.hashtags && analysis.hashtags.length > 0) {
 				report += `🏷️ **Hashtags:** ${analysis.hashtags.map(tag => `#${tag}`).join(' ')}\n\n`;
 			}
-			
-			report += `📊 **Performance Metrics:**\n`;
-			report += `• Cache hit rate: ${metrics.cacheHitRate.toFixed(1)}%\n`;
-			report += `• Average latency: ${metrics.avgLatency.toFixed(0)}ms\n`;
-			report += `• Total requests: ${metrics.totalRequests}\n`;
-			
+
 			await ctx.reply(report, {
 				reply_markup: createMainMenu().reply_markup
 			});
@@ -216,140 +218,6 @@ export function registerCommands(bot: Telegraf) {
 			counters.errorsTotal.inc({ scope: 'analyze' });
 			await ctx.reply('Failed to analyze article.');
 			logger.error({ err }, 'analyze command failed');
-		}
-	});
-
-	bot.command('testpost', async (ctx) => {
-		counters.commandsHandled.inc({ command: 'testpost' });
-		try {
-			await ctx.reply('Creating enhanced test post...');
-			const articles = await fetchAllArticles();
-			if (articles.length === 0) {
-				await ctx.reply('No articles available for testing.');
-				return;
-			}
-			
-			const testArticle = articles[0]!;
-			const { createEnhancedPostWithFallback } = await import('../services/post-service');
-		const message = await createEnhancedPostWithFallback(testArticle);
-			if (message) {
-				await sendPostWithImage(ctx.chat.id.toString(), message, testArticle.imageUrl);
-			} else {
-				await ctx.reply('❌ <b>Test Post Failed</b>\n\nUnable to analyze the test article. This may indicate an AI analysis issue.', {
-					parse_mode: 'HTML',
-					reply_markup: createMainMenu().reply_markup
-				});
-			}
-			
-			logger.info({ title: testArticle.title }, 'test post created successfully');
-		} catch (err) {
-			counters.errorsTotal.inc({ scope: 'testpost' });
-			await ctx.reply('Failed to create test post.');
-			logger.error({ err }, 'testpost command failed');
-		}
-	});
-
-	bot.command('testenglish', async (ctx) => {
-		counters.commandsHandled.inc({ command: 'testenglish' });
-		try {
-			// Create a test English article
-		const testEnglishArticle = {
-			title: 'Meta Unveils Advanced AI Assistant for Businesses',
-			link: 'https://example.com/meta-ai-business',
-			contentSnippet: 'Meta has launched a new AI assistant specifically designed for business applications, featuring advanced natural language processing capabilities and integration with popular business tools. The assistant aims to improve productivity and streamline workflows.',
-			pubDate: new Date().toISOString()
-		};
-			
-		await ctx.reply('🇺🇸 **Testing English Language Post**\n\nGenerating AI-enhanced post in English...');
-		
-		const { createEnhancedPostWithFallback } = await import('../services/post-service');
-		const message = await createEnhancedPostWithFallback(testEnglishArticle);
-		
-		if (message) {
-				await ctx.reply(message, {
-					reply_markup: createMainMenu().reply_markup
-				});
-			} else {
-				await ctx.reply('❌ <b>English Test Failed</b>\n\nUnable to analyze the English test article. This may indicate an AI analysis issue.', {
-					reply_markup: createMainMenu().reply_markup
-				});
-			}
-			
-			await ctx.reply('✅ **English Test Complete!**\n\nThis demonstrates how the bot analyzes and formats content in English when specifically requested.', {
-				reply_markup: createMainMenu().reply_markup
-			});
-			
-		} catch (err) {
-			await ctx.reply(`English test failed: ${err}`, {
-				reply_markup: createMainMenu().reply_markup
-			});
-		}
-	});
-
-	// Performance and admin commands
-	bot.command('performance', async (ctx) => {
-		counters.commandsHandled.inc({ command: 'performance' });
-		await ctx.reply('📊 Loading performance statistics...');
-		try {
-			const metrics = getAnalysisMetrics();
-			const { getAnalysisCacheStats } = await import('../storage/analysis-cache');
-			const { getProviderHealthStatus } = await import('../ai-analysis/providers');
-			const cacheStats = await getAnalysisCacheStats();
-			const providerHealth = getProviderHealthStatus();
-			
-			let report = '⚡ Performance Optimization Status:\n\n';
-			
-			// Analysis Metrics
-			report += '🧠 AI Analysis Performance:\n';
-			report += `📊 Total Requests: ${metrics.totalRequests}\n`;
-			report += `💾 Cache Hits: ${metrics.cacheHits} (${metrics.cacheHitRate.toFixed(1)}%)\n`;
-			report += `🔥 Cache Misses: ${metrics.cacheMisses}\n`;
-			report += `🌐 API Calls: ${metrics.apiCalls}\n`;
-			report += `⚡ Avg Latency: ${metrics.avgLatency.toFixed(0)}ms\n`;
-			report += `❌ Error Rate: ${metrics.errorRate.toFixed(1)}%\n\n`;
-			
-			// Provider Health Status
-			report += '🤖 AI Provider Health:\n';
-			Object.entries(providerHealth).forEach(([provider, health]) => {
-				const status = health.isHealthy ? '✅' : '❌';
-				const failures = health.failureCount > 0 ? ` (${health.failureCount} failures)` : '';
-				report += `${status} ${provider.toUpperCase()}${failures}\n`;
-			});
-			report += '\n';
-			
-			// Cache Statistics
-			report += '🗄️ Analysis Cache Stats:\n';
-			report += `💾 Cached Analyses: ${cacheStats.totalCached}\n`;
-			if (cacheStats.oldestEntry) {
-				const oldestDate = new Date(cacheStats.oldestEntry);
-				report += `📅 Oldest: ${oldestDate.toLocaleDateString()}\n`;
-			}
-			if (cacheStats.newestEntry) {
-				const newestDate = new Date(cacheStats.newestEntry);
-				report += `🆕 Newest: ${newestDate.toLocaleDateString()}\n`;
-			}
-			
-			// Performance Benefits
-			report += '\n💰 Cost Savings:\n';
-			const savedCalls = metrics.cacheHits;
-			const estimatedSavings = savedCalls * 0.001; // Rough estimate
-			report += `💸 API Calls Saved: ${savedCalls}\n`;
-			report += `💰 Est. Cost Saved: $${estimatedSavings.toFixed(3)}\n\n`;
-			
-			// Optimization Tips
-			if (metrics.cacheHitRate < 50) {
-				report += '💡 Tip: Cache hit rate is low. Consider increasing cache size.\n';
-			} else if (metrics.cacheHitRate > 80) {
-				report += '✅ Excellent cache performance! System is well optimized.\n';
-			}
-			
-			await ctx.reply(report, {
-				reply_markup: createMainMenu().reply_markup
-			});
-		} catch (err) {
-			await ctx.reply(`Performance check failed: ${err}`, {
-				reply_markup: createMainMenu().reply_markup
-			});
 		}
 	});
 

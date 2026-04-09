@@ -25,8 +25,6 @@ src/
 ├── bot/              # Telegram bot commands and handlers
 ├── categorizer/      # Content categorization logic
 ├── data-aggregator/  # RSS feed fetching and parsing
-├── github-api/       # GitHub trending integration
-├── prompts/          # AI prompt templates
 ├── services/         # Post creation and formatting
 ├── storage/          # Caching and persistence
 └── utils/            # Helper utilities
@@ -116,7 +114,6 @@ src/
 | `OPENAI_API_KEY` | - | OpenAI API key |
 | `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model to use |
 | `AI_PROVIDER` | - | Force specific provider (overrides smart routing) |
-| `GITHUB_TOKEN` | - | GitHub API token for trending repos |
 
 ## 🤖 AI Providers & Smart Routing
 
